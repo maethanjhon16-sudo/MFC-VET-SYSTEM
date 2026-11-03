@@ -1,0 +1,3 @@
+/* Same 20px rhythm as the Figma "Form" auto-layout frame. */
+.form { display: flex; flex-direction: column; align-items: flex-start; gap: 20px; width: 100%; }
+.options { display: flex; align-items: center; justify-content: space-between; width: 100%; }

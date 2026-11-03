@@ -1,0 +1,23 @@
+/* Design tokens — mirror the Figma variable collection "color/*" */
+:root {
+  --color-off: #fafaf6;
+  --color-cream: #f9f4e9;
+  --color-white: #ffffff;
+  --color-ink: #1b2a22;
+  --color-mute: #62736a;
+  --color-line: #dde3dc;
+  --color-gray: #eceeea;
+  --color-sage: #e3ede2;
+  --color-sagemid: #a9c4ae;
+  --color-forest: #1f4d36;
+  --color-lav: #ece6f7;
+  --color-purple: #7358b5;
+  --color-okbg: #e1f1e6;
+  --color-warnbg: #fbefd6;
+  --color-checkbox-border: #a9b4ad;
+
+  --shadow-card: 0 4px 7px rgba(20, 51, 38, 0.08);
+  --shadow-cta: 0 6px 7px rgba(31, 77, 54, 0.28);
+
+  --font-sans: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}

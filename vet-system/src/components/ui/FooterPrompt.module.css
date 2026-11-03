@@ -1,0 +1,11 @@
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.prompt { color: var(--color-mute); font-weight: 500; }

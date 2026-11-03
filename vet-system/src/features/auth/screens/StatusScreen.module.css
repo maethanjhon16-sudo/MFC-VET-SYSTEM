@@ -1,0 +1,5 @@
+.status { display: flex; flex-direction: column; align-items: center; gap: 20px; width: 100%; }
+.iconCircle { display: flex; align-items: center; justify-content: center; width: 96px; height: 96px; border-radius: 99px; }
+.ok { background: var(--color-okbg); }
+.lav { background: var(--color-lav); }
+.warn { background: var(--color-warnbg); }

@@ -1,0 +1,29 @@
+.card {
+  width: 100%;
+  margin: 0;
+  padding: 22px;
+  list-style: none;
+  border: 1px solid var(--color-line);
+  border-radius: 18px;
+  background: var(--color-white);
+  box-shadow: var(--shadow-card);
+}
+.step { display: flex; align-items: flex-start; gap: 14px; padding-bottom: 18px; }
+.step:last-child { padding-bottom: 0; }
+.dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 99px;
+  background: var(--color-sage);
+  color: var(--color-forest);
+  font-size: 12px;
+  font-weight: 800;
+}
+.done { background: var(--color-forest); }
+.text { display: flex; flex-direction: column; gap: 2px; line-height: normal; white-space: nowrap; }
+.stepTitle { color: var(--color-ink); font-size: 15px; font-weight: 800; }
+.stepNote { color: var(--color-mute); font-size: 13px; font-weight: 500; }

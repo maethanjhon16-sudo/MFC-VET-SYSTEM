@@ -1,0 +1,22 @@
+.stack { display: flex; flex-direction: column; gap: 22px; width: 100%; }
+.card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  padding: 20px;
+  border: 1px solid var(--color-line);
+  border-radius: 18px;
+  background: var(--color-white);
+  box-shadow: var(--shadow-card);
+  text-align: left;
+}
+.card:focus-visible { outline: 3px solid rgba(115, 88, 181, 0.45); outline-offset: 2px; }
+.iconBox { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 64px; height: 64px; border-radius: 16px; }
+.sage { background: var(--color-sage); }
+.lav { background: var(--color-lav); }
+.text { display: flex; flex: 1 0 0; flex-direction: column; gap: 4px; min-width: 0; line-height: normal; }
+.cardTitle { color: var(--color-ink); font-size: 18px; font-weight: 800; }
+.cardDescription { color: var(--color-mute); font-size: 13px; font-weight: 500; }
+/* 22px column gap + 6px spacer in the design before the footer links */
+.footer { display: flex; flex-direction: column; gap: 22px; width: 100%; margin-top: 6px; }

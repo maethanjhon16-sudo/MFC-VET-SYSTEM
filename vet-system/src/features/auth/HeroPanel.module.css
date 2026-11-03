@@ -1,0 +1,73 @@
+.hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  padding: 64px;
+  overflow: hidden;
+  background-image: linear-gradient(128.66deg, rgb(42, 102, 72) 14.644%, rgb(20, 54, 38) 85.356%);
+}
+.ellipseTop { position: absolute; left: -180px; top: -200px; width: 560px; height: 560px; max-width: none; }
+.ellipseBottom { position: absolute; left: 430px; top: 560px; width: 420px; height: 420px; max-width: none; }
+
+.logoMark {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 140px;
+  height: 140px;
+  border-radius: 99px;
+  background: var(--color-cream);
+}
+.brand {
+  position: relative;
+  margin: 0;
+  color: var(--color-white);
+  font-size: 54px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.quote {
+  position: relative;
+  width: 460px;
+  max-width: 100%;
+  margin: 0;
+  color: var(--color-sagemid);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 30px;
+  text-align: center;
+}
+
+.photos { position: relative; display: flex; gap: 16px; }
+.photo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 88px;
+  border-radius: 99px;
+  font-size: 46px;
+  line-height: normal;
+  overflow: hidden;
+}
+.tan { background-image: linear-gradient(to bottom, #efdfc7 18%, #c98c41); }
+.violet { background-image: linear-gradient(to bottom, #ddd4ee 18%, #a82ecc); }
+
+.highlights { position: relative; display: flex; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.pill {
+  display: flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--color-white);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}

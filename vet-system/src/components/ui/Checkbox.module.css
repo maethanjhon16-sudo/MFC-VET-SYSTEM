@@ -1,0 +1,16 @@
+.root { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.native { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--color-white);
+  border: 1.5px solid var(--color-checkbox-border);
+}
+.checked { background: var(--color-forest); border: 0; }
+.native:focus-visible + .box { outline: 3px solid rgba(115, 88, 181, 0.45); outline-offset: 2px; }
+.label { font-size: 13px; font-weight: 600; color: var(--color-ink); line-height: normal; }

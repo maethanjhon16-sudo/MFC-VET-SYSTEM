@@ -1,0 +1,27 @@
+.switch {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  padding: 4px;
+  background: var(--color-gray);
+  border-radius: 16px;
+}
+.option {
+  display: flex;
+  flex: 1 0 0;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-mute);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.active { background: var(--color-white); color: var(--color-forest); font-weight: 800; box-shadow: var(--shadow-card); }
+.option:focus-visible { outline: 3px solid rgba(115, 88, 181, 0.45); outline-offset: 2px; }
