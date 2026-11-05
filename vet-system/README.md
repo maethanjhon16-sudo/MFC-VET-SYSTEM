@@ -1,7 +1,16 @@
-# VET SYSTEM — Authentication (desktop)
+# VET SYSTEM — Desktop (Figma Page 2)
 
-React + TypeScript implementation of the Figma frame **1 · AUTHENTICATION (Shared)**
-(file `FVTtK3O7r0BBhP4NZ7AVmN`, node `250:19114`). Desktop only (1440×900 design).
+React + TypeScript implementation of **Page 2 (desktop, 1440px)** of the Figma file `FVTtK3O7r0BBhP4NZ7AVmN`.
+Page 1 (mobile) is intentionally ignored.
+
+| Figma section | Status |
+| --- | --- |
+| 1 · Authentication (Shared) | done — `features/auth` |
+| 2 · Pet Owner — Home, Services & Shop | **Owner Home done** — `features/owner`; the other 9 frames are placeholders |
+| 3–5 · Pet Owner (schedule, pets, records, messaging, menu) | not built (screen ids already exist in `features/owner/types.ts`) |
+| 6–8, 10 · Vet Doctor | not built (Doctor Dashboard is still a placeholder in `App.tsx`) |
+| 9 · Administrator & account settings | not built (Administrator Dashboard is still a placeholder) |
+| 11 · Additional screens ported from mobile | not built |
 
 ## Run it
 
@@ -39,6 +48,15 @@ No `useState` anywhere — everything uses `useReducer`:
 | Registration Confirmation / Reset Link Sent / Doctor Pending Approval | `screens/*.tsx` on `StatusScreen` |
 
 The hero panel is identical on all 10 frames, so it is one component (`HeroPanel.tsx`).
+
+## Pet Owner (`features/owner`)
+
+`OwnerFlow` mirrors `AuthFlow`: an `ownerReducer` holds the current `OwnerScreen`, `OwnerLayout` provides the shared
+top nav + footer, and every screen receives `go(screen)`. Screens that are not built yet render a placeholder inside
+the layout, so the nav, cart/message/bell buttons and all links on Owner Home can already be clicked through.
+To add a screen: build `screens/<Name>.tsx`, then add a `case` in `OwnerFlow.tsx`.
+
+`npm run icons` now skips files that already exist; use `npm run icons -- --force` to re-download everything.
 
 ## Leaving Authentication
 

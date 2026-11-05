@@ -1,5 +1,6 @@
 import { useCallback, useReducer } from 'react';
 import { AuthFlow } from './features/auth/AuthFlow';
+import { OwnerFlow } from './features/owner/OwnerFlow';
 import type { ExitDestination } from './features/auth/types';
 import styles from './App.module.css';
 
@@ -31,12 +32,18 @@ export function App() {
     return <AuthFlow onExit={enter} />;
   }
 
-  // Placeholder until the next frames are built.
+  const signOut = () => dispatch({ type: 'SIGN_OUT' });
+
+  if (state.destination === 'owner-home') {
+    return <OwnerFlow onSignOut={signOut} />;
+  }
+
+  // Placeholder until the doctor and administrator frames are built.
   return (
     <main className={styles.placeholder}>
       <h1>{DESTINATION_LABEL[state.destination]}</h1>
       <p>This screen comes in the next pass.</p>
-      <button type="button" onClick={() => dispatch({ type: 'SIGN_OUT' })}>
+      <button type="button" onClick={signOut}>
         Back to authentication
       </button>
     </main>
