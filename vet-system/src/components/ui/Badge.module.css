@@ -9,3 +9,5 @@
 }
 .sage { background: var(--color-sage); color: var(--color-forest); }
 .lav { background: var(--color-lav); color: var(--color-purple); }
+.sky { background: var(--color-sky); color: var(--color-sky-text); }
+.warn { background: var(--color-warnbg); color: var(--color-warn-text); }

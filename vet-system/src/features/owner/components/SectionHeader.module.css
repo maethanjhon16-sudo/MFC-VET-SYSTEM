@@ -1,0 +1,7 @@
+.header { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.title { display: flex; flex-direction: column; gap: 2px; }
+.title h2 { margin: 0; font-size: 22px; font-weight: 800; line-height: normal; color: var(--color-ink); white-space: nowrap; }
+.title p { margin: 0; font-size: 13px; font-weight: 500; color: var(--color-mute); }
+.links { display: flex; align-items: center; gap: 14px; }
+.link { display: flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font-size: 14px; font-weight: 700; color: var(--color-purple); white-space: nowrap; }
+.link:focus-visible { outline: 3px solid rgba(115, 88, 181, 0.45); outline-offset: 2px; border-radius: 6px; }

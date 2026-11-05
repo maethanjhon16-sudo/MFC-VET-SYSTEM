@@ -15,8 +15,15 @@
   --color-okbg: #e1f1e6;
   --color-warnbg: #fbefd6;
   --color-checkbox-border: #a9b4ad;
+  --color-sky: #dff0f8;
+  --color-sky-text: #2f7fa8;
+  --color-bad: #c4584a;
+  --color-ok: #2e8b57;
+  --color-warn-text: #8f5e0e;
+  --color-dot-idle: #c9d1cb;
 
   --shadow-card: 0 4px 7px rgba(20, 51, 38, 0.08);
+  --shadow-card-lg: 0 4px 14px rgba(20, 51, 38, 0.08);
   --shadow-cta: 0 6px 7px rgba(31, 77, 54, 0.28);
 
   --font-sans: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
