@@ -13,6 +13,7 @@
     "dev:web": "vite --host 127.0.0.1",
     "start": "node server/index.js",
     "db:create-admin": "node scripts/create-admin.mjs",
+    "db:reset-admin-password": "node scripts/reset-admin-password.mjs",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
