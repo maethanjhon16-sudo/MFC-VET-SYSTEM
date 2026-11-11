@@ -58,7 +58,11 @@ To check the account, role, status, and password against the database configured
 `DATABASE_URL` without changing anything, run
 `npm run db:check-admin -- admin@example.com` with `ADMIN_BOOTSTRAP_PASSWORD` set to the
 password you plan to use for sign-in. The command never prints the password or its stored
-hash.
+hash. It prints a non-secret database target fingerprint; compare it to the fingerprint in
+the Render Web Service logs to verify that both use the same Neon endpoint and database.
+Rejected sign-ins are logged with only a reason (`account_not_found`, `role_mismatch`, or
+`password_mismatch`), requested role, and that fingerprint. Email addresses and passwords
+are never logged.
 
 `npm run icons` is needed because the app only imports local SVG files, never the temporary
 Figma asset URLs. Those URLs expire 7 days after 2026-11-03; if the script reports a failure,

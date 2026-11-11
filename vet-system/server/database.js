@@ -1,8 +1,16 @@
 import 'dotenv/config';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Pool } from 'pg';
 
 const connectionString = process.env.DATABASE_URL;
+
+export const databaseTargetFingerprint = connectionString
+  ? createHash('sha256')
+      .update(`${new URL(connectionString).host.toLowerCase()}${new URL(connectionString).pathname}`)
+      .digest('hex')
+      .slice(0, 12)
+  : 'unconfigured';
 
 export const pool = connectionString
   ? new Pool({

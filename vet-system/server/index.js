@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { ensureSchema, pool } from './database.js';
+import { databaseTargetFingerprint, ensureSchema, pool } from './database.js';
 import { hashPassword, verifyPassword } from './passwords.js';
 
 const app = express();
@@ -282,6 +282,12 @@ app.post('/api/auth/login', requireSameOrigin, loginLimiter, asyncRoute(async (r
     ? await verifyPassword(password, user.password_hash)
     : await verifyPassword(password, 'AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
   if (!user || !passwordMatches || user.role !== role) {
+    const reason = !user
+      ? 'account_not_found'
+      : user.role !== role
+        ? 'role_mismatch'
+        : 'password_mismatch';
+    console.warn('Login rejected.', { reason, requestedRole: role, databaseTarget: databaseTargetFingerprint });
     return res.status(401).json({ error: 'Email or password is incorrect.' });
   }
   if (user.status === 'pending') {
@@ -382,5 +388,5 @@ app.use((error, req, res, _next) => {
 
 const port = Number(process.env.PORT ?? (isProduction ? 3000 : 3001));
 app.listen(port, '0.0.0.0', () => {
-  console.log(`MFC PET LIFE server listening on port ${port}.`);
+  console.log(`MFC PET LIFE server listening on port ${port}. Database target fingerprint: ${databaseTargetFingerprint}.`);
 });
