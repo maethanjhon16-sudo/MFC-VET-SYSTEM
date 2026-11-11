@@ -7,10 +7,11 @@ interface CheckboxProps {
   onChange: (checked: boolean) => void;
   children: ReactNode;
   name?: string;
+  required?: boolean;
 }
 
 /** Figma component "Checkbox" (checked=true / checked=false) with its label. */
-export function Checkbox({ checked, onChange, children, name }: CheckboxProps) {
+export function Checkbox({ checked, onChange, children, name, required = false }: CheckboxProps) {
   return (
     <label className={styles.root}>
       <input
@@ -18,6 +19,7 @@ export function Checkbox({ checked, onChange, children, name }: CheckboxProps) {
         name={name}
         className={styles.native}
         checked={checked}
+        required={required}
         onChange={(event) => onChange(event.target.checked)}
       />
       <span className={`${styles.box} ${checked ? styles.checked : ''}`}>

@@ -1,7 +1,7 @@
 import { useCallback, useReducer } from 'react';
 import { AuthFlow } from './features/auth/AuthFlow';
-import { OwnerFlow } from './features/owner/OwnerFlow';
 import type { ExitDestination } from './features/auth/types';
+import { OwnerFlow } from './features/owner/OwnerFlow';
 import styles from './App.module.css';
 
 type AppState = { destination: ExitDestination | null };
@@ -18,8 +18,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
   }
 }
 
-const DESTINATION_LABEL: Record<ExitDestination, string> = {
-  'owner-home': 'Owner Home',
+const DESTINATION_LABEL: Record<Exclude<ExitDestination, 'owner-home'>, string> = {
   'doctor-dashboard': 'Doctor Dashboard',
   'administrator-dashboard': 'Administrator Dashboard',
 };
@@ -27,18 +26,18 @@ const DESTINATION_LABEL: Record<ExitDestination, string> = {
 export function App() {
   const [state, dispatch] = useReducer(appReducer, { destination: null });
   const enter = useCallback((destination: ExitDestination) => dispatch({ type: 'ENTER', destination }), []);
+  const signOut = useCallback(() => dispatch({ type: 'SIGN_OUT' }), []);
 
   if (state.destination === null) {
     return <AuthFlow onExit={enter} />;
   }
 
-  const signOut = () => dispatch({ type: 'SIGN_OUT' });
-
+  // Page 2 of the Figma file: Pet Owner — Home, Services & Shop.
   if (state.destination === 'owner-home') {
     return <OwnerFlow onSignOut={signOut} />;
   }
 
-  // Placeholder until the doctor and administrator frames are built.
+  // Placeholder until the doctor / administrator frames are built.
   return (
     <main className={styles.placeholder}>
       <h1>{DESTINATION_LABEL[state.destination]}</h1>

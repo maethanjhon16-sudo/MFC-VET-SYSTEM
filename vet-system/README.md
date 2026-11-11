@@ -1,16 +1,7 @@
-# VET SYSTEM — Desktop (Figma Page 2)
+# VET SYSTEM — Authentication (desktop)
 
-React + TypeScript implementation of **Page 2 (desktop, 1440px)** of the Figma file `FVTtK3O7r0BBhP4NZ7AVmN`.
-Page 1 (mobile) is intentionally ignored.
-
-| Figma section | Status |
-| --- | --- |
-| 1 · Authentication (Shared) | done — `features/auth` |
-| 2 · Pet Owner — Home, Services & Shop | **Owner Home done** — `features/owner`; the other 9 frames are placeholders |
-| 3–5 · Pet Owner (schedule, pets, records, messaging, menu) | not built (screen ids already exist in `features/owner/types.ts`) |
-| 6–8, 10 · Vet Doctor | not built (Doctor Dashboard is still a placeholder in `App.tsx`) |
-| 9 · Administrator & account settings | not built (Administrator Dashboard is still a placeholder) |
-| 11 · Additional screens ported from mobile | not built |
+React + TypeScript implementation of the Figma frame **1 · AUTHENTICATION (Shared)**
+(file `FVTtK3O7r0BBhP4NZ7AVmN`, node `250:19114`). Desktop only (1440×900 design).
 
 ## Run it
 
@@ -19,6 +10,17 @@ npm install
 npm run icons     # one-time: downloads the Figma icons into src/assets/icons
 npm run dev
 ```
+
+The authentication screens currently implement a front-end prototype only; they do not
+create or verify accounts. A production login requires an authentication API and must not
+store passwords in the browser. Required fields, email formats, password length and terms
+acceptance are validated in the browser.
+
+## Deploy to Render
+
+The repository-root `render.yaml` configures the `vet-system` Vite app as a Render Static
+Site and rewrites client-side routes to `index.html`. Connect the repository in Render to
+create the service from the Blueprint.
 
 `npm run icons` is needed because the app only imports local SVG files, never the temporary
 Figma asset URLs. Those URLs expire 7 days after 2026-11-03; if the script reports a failure,
@@ -49,16 +51,16 @@ No `useState` anywhere — everything uses `useReducer`:
 
 The hero panel is identical on all 10 frames, so it is one component (`HeroPanel.tsx`).
 
-## Pet Owner (`features/owner`)
-
-`OwnerFlow` mirrors `AuthFlow`: an `ownerReducer` holds the current `OwnerScreen`, `OwnerLayout` provides the shared
-top nav + footer, and every screen receives `go(screen)`. Screens that are not built yet render a placeholder inside
-the layout, so the nav, cart/message/bell buttons and all links on Owner Home can already be clicked through.
-To add a screen: build `screens/<Name>.tsx`, then add a `case` in `OwnerFlow.tsx`.
-
-`npm run icons` now skips files that already exist; use `npm run icons -- --force` to re-download everything.
-
 ## Leaving Authentication
 
 `<AuthFlow onExit={...} />` calls `onExit('owner-home' | 'doctor-dashboard' | 'administrator-dashboard')`
 for the Log In / Go to Home / Preview buttons. `App.tsx` shows a placeholder until those frames are built.
+
+## Owner side (page 2 · desktop)
+
+Home, Services, Service Details, Shop and Product Details live in `src/features/owner/`
+(state in `ownerReducer.ts`, shell/nav in `src/components/owner/`). After login as Pet Owner you land on Owner Home.
+Frames from other sections (Schedule, Cart, Messages, Book flow…) open a "coming soon" page.
+
+`npm run icons` skips icons that already exist; use `npm run icons -- --force` to re-download all.
+Owner icon URLs were generated 2026-11-10 and expire 2026-11-17.

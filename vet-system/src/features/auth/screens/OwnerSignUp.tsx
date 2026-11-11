@@ -31,7 +31,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
   };
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+    <form className={styles.form} onSubmit={handleSubmit}>
       <Badge tone="sage">Pet Owner account</Badge>
       <AuthTitle>Create account</AuthTitle>
 
@@ -45,6 +45,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
         placeholder="Maria Santos"
         value={values.fullName}
         onChange={(value) => setField('fullName', value)}
+        required
       />
 
       <FieldRow>
@@ -57,6 +58,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
           placeholder="maria.santos@email.com"
           value={values.email}
           onChange={(value) => setField('email', value)}
+          required
         />
         <TextField
           label="Contact number"
@@ -67,6 +69,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
           placeholder="+63 917 555 0142"
           value={values.contact}
           onChange={(value) => setField('contact', value)}
+          required
         />
       </FieldRow>
 
@@ -78,6 +81,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
           placeholder="Davao del Sur"
           value={values.province}
           onChange={(value) => setField('province', value)}
+          required
         />
         <TextField
           label="City / Municipality"
@@ -86,6 +90,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
           placeholder="Davao City"
           value={values.city}
           onChange={(value) => setField('city', value)}
+          required
         />
       </FieldRow>
 
@@ -96,6 +101,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
         placeholder="Poblacion District"
         value={values.barangay}
         onChange={(value) => setField('barangay', value)}
+        required
       />
 
       <FieldRow>
@@ -105,6 +111,8 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
           autoComplete="new-password"
           value={values.password}
           onChange={(value) => setField('password', value)}
+          minLength={8}
+          required
         />
         <PasswordField
           label="Confirm password"
@@ -112,10 +120,12 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
           autoComplete="new-password"
           value={values.confirmPassword}
           onChange={(value) => setField('confirmPassword', value)}
+          minLength={8}
+          required
         />
       </FieldRow>
 
-      <Checkbox checked={values.acceptedTerms} onChange={() => toggleField('acceptedTerms')} name="acceptedTerms">
+      <Checkbox checked={values.acceptedTerms} onChange={() => toggleField('acceptedTerms')} name="acceptedTerms" required>
         I agree to the Terms of Service and Privacy Policy
       </Checkbox>
 

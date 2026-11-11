@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import styles from './Badge.module.css';
 
 interface BadgeProps {
-  tone: 'sage' | 'lav' | 'sky' | 'warn';
+  tone: 'sage' | 'lav';
   children: ReactNode;
 }
 
