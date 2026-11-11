@@ -48,6 +48,12 @@ npm run db:create-admin -- admin@example.com
 
 Use a unique password of at least 12 characters. The script prints no password and refuses
 to overwrite an existing account. Never set the bootstrap password in frontend variables.
+If the administrator already exists but its password needs changing, set
+`ADMIN_BOOTSTRAP_PASSWORD` to a new unique password and run
+`npm run db:reset-admin-password -- admin@example.com` instead. This updates only an existing
+administrator with that email and signs out its existing sessions. Changing the
+`ADMIN_BOOTSTRAP_PASSWORD` Render environment variable alone does not change a password
+already stored in Neon.
 
 `npm run icons` is needed because the app only imports local SVG files, never the temporary
 Figma asset URLs. Those URLs expire 7 days after 2026-11-03; if the script reports a failure,
