@@ -3,7 +3,7 @@ services:
     name: mfc-vet-system
     runtime: static
     rootDir: vet-system
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     routes:
       - type: rewrite
