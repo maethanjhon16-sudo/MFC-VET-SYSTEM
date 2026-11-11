@@ -1,0 +1,38 @@
+.section { display: flex; flex-direction: column; gap: 18px; width: 100%; }
+
+.sectionHeader { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.sectionTitle { display: flex; flex-direction: column; gap: 2px; }
+.sectionTitle h2 { margin: 0; font-size: 22px; font-weight: 800; color: var(--color-ink); white-space: nowrap; }
+.sectionTitle p { margin: 0; font-size: 13px; font-weight: 500; color: var(--color-mute); }
+.links { display: flex; align-items: center; gap: 14px; }
+.seeAll { display: flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font-size: 14px; font-weight: 700; color: var(--color-purple); white-space: nowrap; }
+.seeAll:hover { text-decoration: underline; }
+.arrow { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; background: var(--color-white); border: 1px solid var(--color-line); border-radius: 99px; }
+.arrow:hover { border-color: var(--color-sagemid); }
+
+/* The rail scrolls and clips at the content edge; vertical padding + negative margin keep card shadows from being cut off. */
+.rail { width: 100%; margin: -4px 0 -18px; padding: 4px 0 18px; overflow-x: auto; scrollbar-width: none; }
+.rail::-webkit-scrollbar { display: none; }
+.row { display: flex; align-items: flex-start; gap: 20px; width: max-content; }
+
+.product {
+  display: flex; flex-direction: column; align-items: stretch; flex-shrink: 0; padding: 0; overflow: hidden; text-align: left;
+  background: var(--color-white); border: 1px solid var(--color-line); border-radius: 18px; box-shadow: var(--shadow-rail);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.product:hover { transform: translateY(-2px); border-color: var(--color-sagemid); }
+.productBody { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px; }
+.productName { font-size: 14px; font-weight: 800; color: var(--color-ink); }
+.rating { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: var(--color-mute); }
+.productPrice { font-size: 17px; font-weight: 800; color: var(--color-forest); }
+
+.miniService {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 12px; flex-shrink: 0; align-self: stretch; padding: 18px; text-align: left;
+  background: var(--color-white); border: 1px solid var(--color-line); border-radius: 18px; box-shadow: var(--shadow-card);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.miniService:hover { transform: translateY(-2px); border-color: var(--color-sagemid); }
+.miniText { display: flex; flex-direction: column; gap: 3px; }
+.miniName { font-size: 16px; font-weight: 800; color: var(--color-ink); white-space: nowrap; }
+.miniBlurb { width: 164px; font-size: 12px; font-weight: 500; color: var(--color-mute); }
+.miniLink { display: flex; align-items: center; gap: 4px; margin-top: auto; font-size: 13px; font-weight: 700; color: var(--color-purple); white-space: nowrap; }

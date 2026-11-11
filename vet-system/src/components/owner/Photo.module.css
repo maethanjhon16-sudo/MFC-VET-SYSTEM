@@ -1,0 +1,11 @@
+.photo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  line-height: normal;
+  color: var(--color-ink);
+  background: linear-gradient(to bottom, var(--from), var(--to));
+  user-select: none;
+}

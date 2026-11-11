@@ -1,0 +1,70 @@
+.page { min-height: 100vh; display: flex; flex-direction: column; background: var(--color-off); }
+
+.nav {
+  height: 76px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 64px;
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-line);
+  box-shadow: var(--shadow-card);
+}
+
+.brand { display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; }
+.logoMark { display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; border-radius: 99px; background: var(--color-cream); }
+.brandName { font-size: 18px; font-weight: 800; color: var(--color-forest); white-space: nowrap; }
+
+.primary { display: flex; align-items: center; gap: 6px; }
+.navItem {
+  display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px;
+  border: 0; border-radius: 99px; background: transparent;
+  font-size: 14px; font-weight: 700; color: var(--color-mute); white-space: nowrap;
+}
+.navItem:hover { background: var(--color-gray); }
+.navOn, .navOn:hover { background: var(--color-sage); color: var(--color-forest); font-weight: 800; }
+
+.actions { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.search {
+  display: flex; align-items: center; gap: 10px; width: 250px; min-width: 150px; flex-shrink: 1; height: 44px; padding: 0 16px;
+  background: var(--color-off); border: 1px solid var(--color-line); border-radius: 99px;
+}
+.search:focus-within { border-color: var(--color-forest); }
+.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 13px; font-weight: 500; color: var(--color-ink); }
+.search input::placeholder { color: var(--color-mute); }
+
+.iconBtn {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0; background: var(--color-white);
+  border: 1px solid var(--color-line); border-radius: 99px;
+}
+.iconBtn:hover, .profile:hover { border-color: var(--color-sagemid); }
+.dot { position: absolute; top: 6px; left: 26px; width: 10px; height: 10px; border-radius: 99px; background: var(--color-bad); border: 2px solid var(--color-white); box-sizing: border-box; }
+.count {
+  position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
+  background: var(--color-forest); color: var(--color-white); font-size: 10px; font-weight: 800; line-height: 18px; text-align: center;
+}
+
+.profile {
+  display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px 0 6px;
+  background: var(--color-white); border: 1px solid var(--color-line); border-radius: 99px;
+  font-size: 13px; font-weight: 800; color: var(--color-ink); white-space: nowrap;
+}
+.avatar {
+  display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 99px; font-size: 17px;
+  background: linear-gradient(to bottom, #e3ede2, #a9c4ae);
+}
+
+.content { flex: 1; width: 100%; max-width: 1440px; margin: 0 auto; padding: 32px 64px 56px; display: flex; flex-direction: column; gap: 32px; }
+
+.footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 26px 64px;
+  background: var(--color-white); border-top: 1px solid var(--color-line);
+}
+.footer p { margin: 0; font-size: 12px; font-weight: 500; color: var(--color-mute); white-space: pre; }
+.footBrand { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 800; color: var(--color-forest); }
+.logoSm { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 99px; background: var(--color-cream); }
+.help { padding: 0; border: 0; background: none; font-size: 12px; font-weight: 700; color: var(--color-purple); }
+.help:hover { text-decoration: underline; }

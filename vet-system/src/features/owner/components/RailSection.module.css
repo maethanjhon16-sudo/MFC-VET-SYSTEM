@@ -1,7 +1,0 @@
-.section { display: flex; flex-direction: column; gap: 18px; width: 100%; }
-.arrow { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid var(--color-line); border-radius: 99px; background: var(--color-white); }
-.arrow:focus-visible { outline: 3px solid rgba(115, 88, 181, 0.45); outline-offset: 2px; }
-/* Bottom padding / negative margin keep the card shadows from being clipped by the scroll container. */
-.rail { overflow-x: auto; padding-bottom: 14px; margin-bottom: -14px; scrollbar-width: none; }
-.rail::-webkit-scrollbar { display: none; }
-.row { display: flex; align-items: stretch; gap: 20px; width: max-content; }

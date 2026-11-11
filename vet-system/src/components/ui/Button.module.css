@@ -13,6 +13,3 @@
 .button:focus-visible { outline: 3px solid rgba(115, 88, 181, 0.45); outline-offset: 2px; }
 .primary { background: var(--color-forest); color: var(--color-white); border: 0; box-shadow: var(--shadow-cta); }
 .secondary { background: var(--color-white); color: var(--color-forest); border: 1px solid var(--color-line); }
-.compact { width: auto; height: 48px; gap: 8px; }
-.onDark { background: var(--color-white); color: var(--color-forest); border: 0; }
-.ghostOnDark { background: rgba(255, 255, 255, 0.16); color: var(--color-white); border: 0; }
