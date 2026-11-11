@@ -8,6 +8,8 @@ import { PasswordField } from '../../../components/ui/PasswordField';
 import { RoleSwitch } from '../../../components/ui/RoleSwitch';
 import { TextField } from '../../../components/ui/TextField';
 import { useForm } from '../../../hooks/useForm';
+import { useRequestState } from '../../../hooks/useRequestState';
+import { login } from '../api';
 import { AuthSubtitle, AuthTitle } from '../AuthText';
 import type { AuthScreen, ExitDestination, ScreenProps } from '../types';
 import styles from './Form.module.css';
@@ -65,10 +67,22 @@ interface LoginScreenProps extends ScreenProps {
 export function LoginScreen({ variant, go, exit }: LoginScreenProps) {
   const config = CONFIG[variant];
   const { values, setField, toggleField } = useForm({ identifier: '', password: '', remember: true });
+  const request = useRequestState();
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    exit(config.onLogin);
+    request.start();
+    try {
+      await login({
+        email: values.identifier.trim(),
+        password: values.password,
+        role: variant === 'admin' ? 'admin' : variant,
+        remember: values.remember,
+      });
+      exit(config.onLogin);
+    } catch (error) {
+      request.fail(error);
+    }
   };
 
   return (
@@ -111,7 +125,8 @@ export function LoginScreen({ variant, go, exit }: LoginScreenProps) {
         </LinkButton>
       </div>
 
-      <Button type="submit">Log In</Button>
+      {request.error && <p className={styles.errorNotice} role="alert">{request.error}</p>}
+      <Button type="submit" disabled={request.pending}>{request.pending ? 'Signing in…' : 'Log In'}</Button>
       <FooterPrompt
         prompt={config.footer.prompt}
         actionLabel={config.footer.action}

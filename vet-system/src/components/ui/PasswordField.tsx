@@ -13,6 +13,7 @@ interface PasswordFieldProps {
   autoComplete?: 'current-password' | 'new-password';
   required?: boolean;
   minLength?: number;
+  maxLength?: number;
 }
 
 type VisibilityAction = { type: 'TOGGLE_VISIBILITY' };
@@ -31,6 +32,7 @@ export function PasswordField({
   autoComplete = 'current-password',
   required = false,
   minLength,
+  maxLength,
 }: PasswordFieldProps) {
   const id = useId();
   const [visible, dispatch] = useReducer(visibilityReducer, false);
@@ -49,6 +51,7 @@ export function PasswordField({
           autoComplete={autoComplete}
           required={required}
           minLength={minLength}
+          maxLength={maxLength}
           onChange={(event) => onChange(event.target.value)}
         />
         <button

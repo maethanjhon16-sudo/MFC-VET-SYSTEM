@@ -8,11 +8,14 @@ import { PasswordField } from '../../../components/ui/PasswordField';
 import { RoleSwitch } from '../../../components/ui/RoleSwitch';
 import { TextField } from '../../../components/ui/TextField';
 import { useForm } from '../../../hooks/useForm';
+import { useRequestState } from '../../../hooks/useRequestState';
+import { register } from '../api';
 import { AuthTitle } from '../AuthText';
 import type { ScreenProps } from '../types';
 import styles from './Form.module.css';
 
 export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
+  const request = useRequestState();
   const { values, setField, toggleField } = useForm({
     fullName: '',
     email: '',
@@ -25,9 +28,29 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
     acceptedTerms: false, // starts unticked, as in the design
   });
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    go('registration-confirmation');
+    if (values.password !== values.confirmPassword) {
+      request.fail(new Error('Passwords do not match.'));
+      return;
+    }
+    request.start();
+    try {
+      await register({
+        role: 'owner',
+        fullName: values.fullName,
+        email: values.email,
+        phone: values.contact,
+        province: values.province,
+        city: values.city,
+        barangay: values.barangay,
+        password: values.password,
+        acceptedTerms: values.acceptedTerms,
+      });
+      go('registration-confirmation');
+    } catch (error) {
+      request.fail(error);
+    }
   };
 
   return (
@@ -112,6 +135,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
           value={values.password}
           onChange={(value) => setField('password', value)}
           minLength={8}
+          maxLength={128}
           required
         />
         <PasswordField
@@ -121,6 +145,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
           value={values.confirmPassword}
           onChange={(value) => setField('confirmPassword', value)}
           minLength={8}
+          maxLength={128}
           required
         />
       </FieldRow>
@@ -129,7 +154,8 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
         I agree to the Terms of Service and Privacy Policy
       </Checkbox>
 
-      <Button type="submit">Create Account</Button>
+      {request.error && <p className={styles.errorNotice} role="alert">{request.error}</p>}
+      <Button type="submit" disabled={request.pending}>{request.pending ? 'Creating account…' : 'Create Account'}</Button>
       <FooterPrompt prompt="Already have an account?" actionLabel="Log in" onAction={() => go('owner-login')} />
     </form>
   );

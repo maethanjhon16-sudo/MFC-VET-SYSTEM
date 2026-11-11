@@ -4,27 +4,33 @@ import { Button } from '../../../components/ui/Button';
 import { FooterPrompt } from '../../../components/ui/FooterPrompt';
 import { TextField } from '../../../components/ui/TextField';
 import { useForm } from '../../../hooks/useForm';
+import { useRequestState } from '../../../hooks/useRequestState';
+import { requestPasswordReset } from '../api';
 import { AuthSubtitle, AuthTitle } from '../AuthText';
 import type { ScreenProps } from '../types';
 import styles from './Form.module.css';
 
-interface ForgotPasswordProps extends Pick<ScreenProps, 'go'> {
-  onRequested: (email: string) => void;
-}
+type ForgotPasswordProps = Pick<ScreenProps, 'go'>;
 
-export function ForgotPassword({ go, onRequested }: ForgotPasswordProps) {
+export function ForgotPassword({ go }: ForgotPasswordProps) {
   const { values, setField } = useForm({ email: '' });
+  const request = useRequestState();
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    onRequested(values.email.trim());
+    request.start();
+    try {
+      await requestPasswordReset(values.email.trim());
+    } catch (error) {
+      request.fail(error);
+    }
   };
 
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
       <Badge tone="sage">Account recovery</Badge>
       <AuthTitle>Reset your password</AuthTitle>
-      <AuthSubtitle>Enter the email linked to your account and we’ll send a reset link.</AuthSubtitle>
+      <AuthSubtitle>Password reset by email is not available yet. Please contact the clinic administrator.</AuthSubtitle>
 
       <TextField
         label="Email address"
@@ -38,7 +44,8 @@ export function ForgotPassword({ go, onRequested }: ForgotPasswordProps) {
         required
       />
 
-      <Button type="submit">Send Reset Link</Button>
+      {request.error && <p className={styles.errorNotice} role="alert">{request.error}</p>}
+      <Button type="submit" disabled={request.pending}>{request.pending ? 'Sending…' : 'Send Reset Link'}</Button>
       <FooterPrompt prompt="Remembered it?" actionLabel="Back to login" onAction={() => go('owner-login')} />
     </form>
   );

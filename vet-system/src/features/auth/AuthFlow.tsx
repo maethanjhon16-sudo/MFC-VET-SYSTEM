@@ -15,16 +15,17 @@ interface AuthFlowProps {
   initialScreen?: AuthScreen;
   /** Called when the user leaves Authentication (e.g. after logging in). */
   onExit: (destination: ExitDestination) => void;
+  notice?: string | null;
 }
 
-export function AuthFlow({ initialScreen = 'role-selection', onExit }: AuthFlowProps) {
+export function AuthFlow({ initialScreen = 'role-selection', onExit, notice }: AuthFlowProps) {
   const [state, dispatch] = useReducer(authReducer, initialScreen, createInitialState);
 
   const go = useCallback((to: AuthScreen) => dispatch({ type: 'NAVIGATE', to }), []);
   const nav = { go, exit: onExit };
 
   return (
-    <AuthLayout>
+    <AuthLayout notice={notice}>
       {(() => {
         switch (state.screen) {
           case 'role-selection':
@@ -45,12 +46,7 @@ export function AuthFlow({ initialScreen = 'role-selection', onExit }: AuthFlowP
               />
             );
           case 'forgot-password':
-            return (
-              <ForgotPassword
-                go={go}
-                onRequested={(email) => dispatch({ type: 'RESET_LINK_REQUESTED', email })}
-              />
-            );
+            return <ForgotPassword go={go} />;
           case 'registration-confirmation':
             return <RegistrationConfirmation {...nav} />;
           case 'reset-link-sent':
