@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { pool, ensureSchema } from '../server/database.js';
+import { databaseTargetFingerprint, pool, ensureSchema } from '../server/database.js';
 import { verifyPassword } from '../server/passwords.js';
 
 const email = process.argv[2]?.trim().toLowerCase();
@@ -19,6 +19,7 @@ if (!pool) {
 
 if (exitCode === 0) {
   try {
+    console.log(`Database target fingerprint: ${databaseTargetFingerprint}`);
     await ensureSchema();
     const result = await pool.query(
       'SELECT role, status, password_hash FROM users WHERE email = $1',
