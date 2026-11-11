@@ -29,7 +29,19 @@ async function request<T>(path: string, body?: unknown, method = 'POST'): Promis
   }
 
   if (response.status === 204) return undefined as T;
-  const result = await response.json() as ApiErrorBody & T;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json') && !contentType.includes('+json')) {
+    throw new Error(
+      'This Render URL is serving the frontend but not the API. Deploy the mfc-vet-system-fullstack Web Service and use its URL, not the old Static Site URL.',
+    );
+  }
+
+  let result: ApiErrorBody & T;
+  try {
+    result = await response.json() as ApiErrorBody & T;
+  } catch {
+    throw new Error('The authentication service returned an invalid response. Please try again later.');
+  }
   if (!response.ok) throw new Error(result.error || 'The request could not be completed.');
   return result;
 }

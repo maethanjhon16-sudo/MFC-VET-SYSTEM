@@ -21,6 +21,9 @@ The repository-root `render.yaml` configures a free Render Node web service that
 the Vite frontend and the API from the same origin. If you already deployed the earlier
 static-site Blueprint, create the new `mfc-vet-system-fullstack` service first, verify it,
 then remove the old static site if you no longer need it.
+Use the URL shown for that **Web Service** after it deploys. Opening `/api/health` on that
+URL must return JSON; if it shows the website HTML, you are still using the old Static Site
+URL or the Web Service has not been deployed from this Blueprint.
 
 Create a free Neon Postgres project and copy its pooled connection string into
 `DATABASE_URL` when Render prompts for the Blueprint secret. Keep this value on the Render
