@@ -11,6 +11,17 @@ npm run icons     # one-time: downloads the Figma icons into src/assets/icons
 npm run dev
 ```
 
+The authentication screens currently implement a front-end prototype only; they do not
+create or verify accounts. A production login requires an authentication API and must not
+store passwords in the browser. Required fields, email formats, password length and terms
+acceptance are validated in the browser.
+
+## Deploy to Render
+
+The repository-root `render.yaml` configures the `vet-system` Vite app as a Render Static
+Site and rewrites client-side routes to `index.html`. Connect the repository in Render to
+create the service from the Blueprint.
+
 `npm run icons` is needed because the app only imports local SVG files, never the temporary
 Figma asset URLs. Those URLs expire 7 days after 2026-11-03; if the script reports a failure,
 re-export the icon from the **Icon Library** frame (`250:19009`) and update

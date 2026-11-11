@@ -54,7 +54,7 @@ export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
   };
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+    <form className={styles.form} onSubmit={handleSubmit}>
       <Badge tone="lav">Vet Doctor registration</Badge>
       <AuthTitle>Doctor registration</AuthTitle>
 
@@ -69,6 +69,7 @@ export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
           placeholder="Dr. Andrea Reyes"
           value={values.fullName}
           onChange={(value) => setField('fullName', value)}
+          required
         />
         <TextField
           label="Email address"
@@ -79,6 +80,7 @@ export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
           placeholder="dr.reyes@mfcpetlife.ph"
           value={values.email}
           onChange={(value) => setField('email', value)}
+          required
         />
       </FieldRow>
 
@@ -92,6 +94,7 @@ export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
           placeholder="+63 918 555 0199"
           value={values.contact}
           onChange={(value) => setField('contact', value)}
+          required
         />
         <TextField
           label="PRC license number"
@@ -101,6 +104,7 @@ export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
           placeholder="0012345"
           value={values.prcLicense}
           onChange={(value) => setField('prcLicense', value)}
+          required
         />
       </FieldRow>
 
@@ -120,6 +124,8 @@ export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
           autoComplete="new-password"
           value={values.password}
           onChange={(value) => setField('password', value)}
+          minLength={8}
+          required
         />
         <PasswordField
           label="Confirm password"
@@ -127,10 +133,12 @@ export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
           autoComplete="new-password"
           value={values.confirmPassword}
           onChange={(value) => setField('confirmPassword', value)}
+          minLength={8}
+          required
         />
       </FieldRow>
 
-      <Checkbox checked={values.acceptedTerms} onChange={() => toggleField('acceptedTerms')} name="acceptedTerms">
+      <Checkbox checked={values.acceptedTerms} onChange={() => toggleField('acceptedTerms')} name="acceptedTerms" required>
         I agree to the Terms of Service and Privacy Policy
       </Checkbox>
 

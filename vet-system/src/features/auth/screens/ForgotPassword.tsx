@@ -21,7 +21,7 @@ export function ForgotPassword({ go, onRequested }: ForgotPasswordProps) {
   };
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+    <form className={styles.form} onSubmit={handleSubmit}>
       <Badge tone="sage">Account recovery</Badge>
       <AuthTitle>Reset your password</AuthTitle>
       <AuthSubtitle>Enter the email linked to your account and we’ll send a reset link.</AuthSubtitle>
@@ -35,6 +35,7 @@ export function ForgotPassword({ go, onRequested }: ForgotPasswordProps) {
         placeholder="maria.santos@email.com"
         value={values.email}
         onChange={(value) => setField('email', value)}
+        required
       />
 
       <Button type="submit">Send Reset Link</Button>

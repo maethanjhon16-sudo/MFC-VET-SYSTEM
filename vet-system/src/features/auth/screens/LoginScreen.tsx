@@ -72,7 +72,7 @@ export function LoginScreen({ variant, go, exit }: LoginScreenProps) {
   };
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+    <form className={styles.form} onSubmit={handleSubmit}>
       <Badge tone={config.badgeTone}>{config.badge}</Badge>
       <AuthTitle>{config.title}</AuthTitle>
       <AuthSubtitle>{config.subtitle}</AuthSubtitle>
@@ -92,12 +92,14 @@ export function LoginScreen({ variant, go, exit }: LoginScreenProps) {
         value={values.identifier}
         placeholder={config.identifierPlaceholder}
         onChange={(value) => setField('identifier', value)}
+        required
       />
       <PasswordField
         label="Password"
         name="password"
         value={values.password}
         onChange={(value) => setField('password', value)}
+        required
       />
 
       <div className={styles.options}>

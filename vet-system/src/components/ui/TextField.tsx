@@ -14,6 +14,7 @@ interface TextFieldProps {
   name?: string;
   autoComplete?: string;
   inputMode?: 'text' | 'email' | 'tel' | 'numeric';
+  required?: boolean;
 }
 
 export function TextField({
@@ -26,6 +27,7 @@ export function TextField({
   name,
   autoComplete,
   inputMode,
+  required = false,
 }: TextFieldProps) {
   const id = useId();
   return (
@@ -41,6 +43,7 @@ export function TextField({
           placeholder={placeholder}
           autoComplete={autoComplete}
           inputMode={inputMode}
+          required={required}
           onChange={(event) => onChange(event.target.value)}
         />
       </div>
