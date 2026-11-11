@@ -9,6 +9,8 @@ import { RoleSwitch } from '../../../components/ui/RoleSwitch';
 import { SelectField } from '../../../components/ui/SelectField';
 import { TextField } from '../../../components/ui/TextField';
 import { useForm } from '../../../hooks/useForm';
+import { useRequestState } from '../../../hooks/useRequestState';
+import { register } from '../api';
 import { AuthTitle } from '../AuthText';
 import type { ScreenProps } from '../types';
 import styles from './Form.module.css';
@@ -28,6 +30,7 @@ interface DoctorSignUpProps extends Pick<ScreenProps, 'go'> {
 }
 
 export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
+  const request = useRequestState();
   const { values, setField, toggleField } = useForm<{
     fullName: string;
     email: string;
@@ -48,9 +51,28 @@ export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
     acceptedTerms: false,
   });
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    onSubmitted(Date.now());
+    if (values.password !== values.confirmPassword) {
+      request.fail(new Error('Passwords do not match.'));
+      return;
+    }
+    request.start();
+    try {
+      await register({
+        role: 'doctor',
+        fullName: values.fullName,
+        email: values.email,
+        phone: values.contact,
+        prcLicense: values.prcLicense,
+        specialization: values.specialization,
+        password: values.password,
+        acceptedTerms: values.acceptedTerms,
+      });
+      onSubmitted(Date.now());
+    } catch (error) {
+      request.fail(error);
+    }
   };
 
   return (
@@ -125,6 +147,7 @@ export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
           value={values.password}
           onChange={(value) => setField('password', value)}
           minLength={8}
+          maxLength={128}
           required
         />
         <PasswordField
@@ -134,6 +157,7 @@ export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
           value={values.confirmPassword}
           onChange={(value) => setField('confirmPassword', value)}
           minLength={8}
+          maxLength={128}
           required
         />
       </FieldRow>
@@ -142,7 +166,8 @@ export function DoctorSignUp({ go, onSubmitted }: DoctorSignUpProps) {
         I agree to the Terms of Service and Privacy Policy
       </Checkbox>
 
-      <Button type="submit">Submit for Approval</Button>
+      {request.error && <p className={styles.errorNotice} role="alert">{request.error}</p>}
+      <Button type="submit" disabled={request.pending}>{request.pending ? 'Submitting…' : 'Submit for Approval'}</Button>
       <FooterPrompt prompt="Already registered?" actionLabel="Log in" onAction={() => go('doctor-login')} />
     </form>
   );
