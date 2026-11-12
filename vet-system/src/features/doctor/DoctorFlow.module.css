@@ -155,7 +155,7 @@
 .navLabel { margin: 16px 0 6px; padding: 0 14px; color: #8fb09a; font-size: 11px; letter-spacing: .08em; }
 .navigation { gap: 2px; }
 .navigation button, .signOut { min-height: 44px; padding: 0 14px; border-radius: 12px; gap: 12px; color: #cfe1d5; font-size: 14px; }
-.navigation button > img, .signOut > img { filter: brightness(0) invert(1); }
+.navigation button > img, .signOut > img, .navigation button > span img { filter: brightness(0) invert(1); }
 .navigation button > span, .signOut > span { display: grid; place-items: center; width: 20px; color: inherit; font-size: 16px; }
 .navigation button:hover, .signOut:hover { background: rgba(255,255,255,.1); }
 .navigation .navActive { color: #fff; background: rgba(255,255,255,.16); font-weight: 800; }
