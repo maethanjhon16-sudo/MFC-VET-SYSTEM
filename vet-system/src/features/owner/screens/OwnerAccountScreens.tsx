@@ -128,7 +128,7 @@ export function OwnerNotifications({ nav }: { nav: OwnerNav }) {
               detail: `${item.petName} · ${item.testName}`,
               target: 'records' as const,
             })),
-          ...records.filter((item) => item.followUpAt)
+          ...records.filter((item) => item.followUpAt && !item.followUpCompletedAt)
             .map((item) => ({
               id: `follow-up-${item.id}`,
               date: item.createdAt,

@@ -182,6 +182,7 @@ export interface OwnerMedicalRecord {
   diagnosis: string;
   treatment: string;
   followUpAt: string | null;
+  followUpCompletedAt: string | null;
   createdAt: string;
   petName: string;
   species: PetSpecies;
@@ -297,6 +298,7 @@ export interface ClinicalRecord {
   diagnosis: string;
   treatment: string;
   followUpAt: string | null;
+  followUpCompletedAt: string | null;
   createdAt: string;
   petName: string;
   species: PetSpecies;
@@ -350,6 +352,7 @@ export interface StaffFollowUp {
   petId: string;
   recordType: string;
   summary: string;
+  recordCreatedAt: string;
   followUpAt: string;
   petName: string;
   species: PetSpecies;
@@ -358,6 +361,14 @@ export interface StaffFollowUp {
 
 export function getStaffFollowUps() {
   return request<{ followUps: StaffFollowUp[] }>('/api/staff/follow-ups', undefined, 'GET');
+}
+
+export function completeStaffFollowUp(id: string) {
+  return request<{ followUp: { id: string; completedAt: string } }>(
+    `/api/staff/follow-ups/${encodeURIComponent(id)}/complete`,
+    {},
+    'PATCH',
+  );
 }
 
 export interface StaffConversation {
@@ -446,6 +457,14 @@ export interface InventoryItem {
   updatedAt: string;
 }
 
+export function getOwnerInventory() {
+  return request<{ inventory: Pick<InventoryItem, 'productId' | 'quantity' | 'updatedAt'>[] }>(
+    '/api/owner/inventory',
+    undefined,
+    'GET',
+  );
+}
+
 export function getStaffInventory() {
   return request<{ inventory: InventoryItem[] }>('/api/staff/inventory', undefined, 'GET');
 }
@@ -518,6 +537,10 @@ export interface OwnerOrder extends Omit<StaffOrder, 'customerName'> {}
 
 export function getOwnerOrders() {
   return request<{ orders: OwnerOrder[] }>('/api/owner/orders', undefined, 'GET');
+}
+
+export function updateStaffLabResult(id: string, input: { status: 'in_lab' | 'ready'; resultText: string }) {
+  return request<{ labResult: LabResult }>(`/api/staff/lab-results/${encodeURIComponent(id)}`, input, 'PATCH');
 }
 
 export function createOwnerOrder(input: {

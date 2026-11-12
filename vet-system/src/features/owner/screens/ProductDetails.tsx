@@ -10,6 +10,10 @@ import s from './Screens.module.css';
 interface ProductDetailsProps {
   nav: OwnerNav;
   product: Product;
+  stockCount: number;
+  inventoryReady: boolean;
+  maxQuantity: number;
+  stockLevels: Record<string, number>;
   sizeIndex: number;
   qty: number;
   tab: ProductTab;
@@ -24,11 +28,11 @@ interface ProductDetailsProps {
 
 const DELIVERY = [
   { icon: 'truck', text: `Delivery available in ${CLINIC_CITY}; fee confirmed by the clinic` },
-  { icon: 'info-shield', text: 'The clinic confirms stock and the final total before fulfillment' },
+  { icon: 'info-shield', text: 'Live stock is validated again when you submit your order' },
   { icon: 'info-clock', text: 'Delivery timing is confirmed after the clinic reviews your request' },
 ] as const;
 
-export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onBuyNow, onSize, onQty, onTab, onThumb, onAdd }: ProductDetailsProps) {
+export function ProductDetails({ nav, product, stockCount, inventoryReady, maxQuantity, stockLevels, sizeIndex, qty, tab, thumb, onBuyNow, onSize, onQty, onTab, onThumb, onAdd }: ProductDetailsProps) {
   const price = product.price * (product.sizes[sizeIndex]?.multiplier ?? 1);
   // Gallery: the product itself plus three related "photos" from the design.
   const gallery = [
@@ -88,6 +92,13 @@ export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onBuy
           <h1 className={s.productTitle}>{product.name}</h1>
           <p className={s.panelText}>{product.blurb}</p>
           <div className={s.bigPrice}>{formatPeso(price)}</div>
+          <p className={s.stockNotice} role="status">
+            {!inventoryReady
+              ? 'Checking current stock…'
+              : stockCount > 0
+                ? `${stockCount} in stock · ${maxQuantity} available to add`
+                : 'Out of stock'}
+          </p>
 
           {product.sizes.length > 1 && (
             <div className={s.sizes}>
@@ -108,15 +119,15 @@ export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onBuy
                 <Icon name="minus" size={16} />
               </button>
               <b aria-live="polite">{qty}</b>
-              <button type="button" aria-label="Increase quantity" onClick={() => onQty(1)}>
+              <button type="button" aria-label="Increase quantity" disabled={qty >= Math.min(20, maxQuantity)} onClick={() => onQty(1)}>
                 <Icon name="plus-ink" size={16} />
               </button>
             </div>
-            <button type="button" className={`${s.btn} ${s.btnPrimary} ${s.grow}`} onClick={onAdd}>
+            <button type="button" className={`${s.btn} ${s.btnPrimary} ${s.grow}`} disabled={!inventoryReady || qty > maxQuantity || maxQuantity < 1} onClick={onAdd}>
               <Icon name="btn-cart-white" size={18} />
               Add to Cart
             </button>
-            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={onBuyNow}>
+            <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={!inventoryReady || qty > maxQuantity || maxQuantity < 1} onClick={onBuyNow}>
               Buy Now
             </button>
           </div>
@@ -158,7 +169,7 @@ export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onBuy
 
       <RailSection title="You may also like" linkLabel="Visit shop" onLink={() => nav.shop()}>
         {recommended.map((p) => (
-          <ProductCard key={p.id} product={p} width={246} onOpen={() => nav.product(p.id)} />
+          <ProductCard key={p.id} product={p} width={246} stockCount={stockLevels[p.id]} onOpen={() => nav.product(p.id)} />
         ))}
       </RailSection>
     </div>

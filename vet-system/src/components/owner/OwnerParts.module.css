@@ -25,6 +25,8 @@
 .productName { font-size: 14px; font-weight: 800; color: var(--color-ink); }
 .rating { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: var(--color-mute); }
 .productPrice { font-size: 17px; font-weight: 800; color: var(--color-forest); }
+.stockAvailable, .stockUnavailable { color: #438054; font-size: 11px; font-weight: 700; }
+.stockUnavailable { color: #a14c43; }
 
 .miniService {
   display: flex; flex-direction: column; align-items: flex-start; gap: 12px; flex-shrink: 0; align-self: stretch; padding: 18px; text-align: left;

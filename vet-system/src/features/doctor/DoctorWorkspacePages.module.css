@@ -82,6 +82,9 @@
 .productCell .serviceEmoji { flex-basis: 34px; width: 34px; height: 34px; font-size: 17px; }
 .stepper { display: flex; gap: 6px; }
 .stepper button { width: 30px; height: 30px; border: 1px solid var(--color-line); border-radius: 7px; color: var(--color-forest); background: #fff; font-size: 17px; }
+.stockEditor { display: flex; align-items: center; gap: 7px; }
+.stockEditor input { width: 78px; min-height: 34px; padding: 0 8px; border: 1px solid var(--color-line); border-radius: 7px; color: var(--color-ink); background: #fff; font: inherit; font-size: 11px; }
+.stockEditor .softButton { min-height: 34px; }
 .profileGrid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(260px, .9fr); align-items: start; gap: 14px; }
 .profileIdentity { display: flex; align-items: center; gap: 13px; padding-bottom: 14px; border-bottom: 1px solid #e9eee8; }
 .profileIdentity h2, .profileCard > h2 { margin: 0; color: var(--color-ink); font-size: 16px; }

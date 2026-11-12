@@ -23,6 +23,9 @@ export function OwnerCart({
   onClear,
   onContinueShopping,
   onOrderPlaced,
+  stockLevels,
+  inventoryReady,
+  inventoryError,
 }: {
   cart: CartLine[];
   onQuantity: (line: CartLine, quantity: number) => void;
@@ -30,6 +33,9 @@ export function OwnerCart({
   onClear: () => void;
   onContinueShopping: () => void;
   onOrderPlaced: () => void;
+  stockLevels: Record<string, number>;
+  inventoryReady: boolean;
+  inventoryError: string | null;
 }) {
   const [fulfillmentMethod, setFulfillmentMethod] = useState<'clinic_pickup' | 'delivery'>('clinic_pickup');
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -53,6 +59,18 @@ export function OwnerCart({
     const product = getProduct(line.productId);
     return sum + Math.round(product.price * (product.sizes[line.sizeIndex]?.multiplier ?? 1)) * line.qty;
   }, 0), [cart]);
+  const stockWarnings = useMemo(() => {
+    if (cart.length === 0) return [];
+    if (!inventoryReady) return ['Current product stock is not available yet.'];
+    const requested = new Map<string, number>();
+    for (const line of cart) requested.set(line.productId, (requested.get(line.productId) ?? 0) + line.qty);
+    return [...requested].flatMap(([productId, quantity]) => {
+      const available = stockLevels[productId] ?? 0;
+      return available < quantity
+        ? [`${getProduct(productId).name}: ${available} available, ${quantity} in your cart.`]
+        : [];
+    });
+  }, [cart, inventoryReady, stockLevels]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -90,6 +108,9 @@ export function OwnerCart({
         <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={onContinueShopping}>Continue shopping</button>
       </header>
       {error && <p className={s.pageError} role="alert">{error}</p>}
+      {stockWarnings.length > 0 && <p className={s.pageError} role="alert">
+        {inventoryError ?? `Please update your cart before checkout. ${stockWarnings.join(' ')}`}
+      </p>}
       {cart.length === 0 ? (
         <section className={`${s.card} ${s.emptyCard}`}>
           <h2>Your cart is empty</h2>
@@ -104,6 +125,10 @@ export function OwnerCart({
               const product = getProduct(line.productId);
               const size = product.sizes[line.sizeIndex];
               const unitPrice = Math.round(product.price * (size?.multiplier ?? 1));
+              const otherVariantQuantity = cart
+                .filter((other) => other.productId === line.productId && other.sizeIndex !== line.sizeIndex)
+                .reduce((sum, other) => sum + other.qty, 0);
+              const maxLineQuantity = Math.max(0, (stockLevels[line.productId] ?? 0) - otherVariantQuantity);
               return (
                 <article className={s.cartItem} key={`${line.productId}-${line.sizeIndex}`}>
                   <div className={s.cartProductImage} aria-hidden="true">{product.emoji}</div>
@@ -116,7 +141,7 @@ export function OwnerCart({
                     <div className={s.stepper} role="group" aria-label={`Quantity of ${product.name}`}>
                       <button type="button" aria-label="Decrease quantity" disabled={line.qty <= 1} onClick={() => onQuantity(line, line.qty - 1)}>−</button>
                       <b>{line.qty}</b>
-                      <button type="button" aria-label="Increase quantity" disabled={line.qty >= 20} onClick={() => onQuantity(line, line.qty + 1)}>＋</button>
+                      <button type="button" aria-label="Increase quantity" disabled={!inventoryReady || line.qty >= Math.min(20, maxLineQuantity)} onClick={() => onQuantity(line, line.qty + 1)}>＋</button>
                     </div>
                     <button type="button" className={s.removeItem} onClick={() => onRemove(line)}>Remove</button>
                   </div>
@@ -146,8 +171,8 @@ export function OwnerCart({
               <span>Delivery fee <b>{fulfillmentMethod === 'delivery' ? 'Confirmed by clinic' : '₱0'}</b></span>
               <strong>Estimated total <b>{formatPeso(total)}{fulfillmentMethod === 'delivery' ? ' + delivery' : ''}</b></strong>
             </div>
-            <p className={s.checkoutNotice}>This is an order request. The clinic will confirm stock, delivery fee, and the final total before fulfillment. No online payment details are collected.</p>
-            <button type="submit" className={`${s.btn} ${s.btnPrimary}`} disabled={submitting || !contactPhone.trim() || (fulfillmentMethod === 'delivery' && !deliveryAddress.trim())}>
+            <p className={s.checkoutNotice}>Stock is checked and reserved when you submit. The clinic confirms the delivery fee and fulfillment. No online payment details are collected.</p>
+            <button type="submit" className={`${s.btn} ${s.btnPrimary}`} disabled={submitting || stockWarnings.length > 0 || !contactPhone.trim() || (fulfillmentMethod === 'delivery' && !deliveryAddress.trim())}>
               {submitting ? 'Sending order…' : 'Place order request'}
             </button>
           </form>

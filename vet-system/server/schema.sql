@@ -92,9 +92,13 @@ CREATE TABLE IF NOT EXISTS clinical_records (
   diagnosis text NOT NULL DEFAULT '',
   treatment text NOT NULL DEFAULT '',
   follow_up_at date,
+  follow_up_completed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE clinical_records
+  ADD COLUMN IF NOT EXISTS follow_up_completed_at timestamptz;
 
 CREATE INDEX IF NOT EXISTS clinical_records_pet_created_idx
   ON clinical_records (pet_id, created_at DESC);
@@ -199,9 +203,13 @@ CREATE TABLE IF NOT EXISTS orders (
   delivery_address text NOT NULL DEFAULT '',
   contact_phone text NOT NULL DEFAULT '',
   total_amount numeric(10, 2) NOT NULL CHECK (total_amount >= 0),
+  stock_reserved boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE orders
+  ADD COLUMN IF NOT EXISTS stock_reserved boolean NOT NULL DEFAULT false;
 
 ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS fulfillment_method text NOT NULL DEFAULT 'clinic_pickup';

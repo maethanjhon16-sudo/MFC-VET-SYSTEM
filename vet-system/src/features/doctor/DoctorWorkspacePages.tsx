@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useReducer } from 'react';
+import { Fragment, useEffect, useMemo, useReducer, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { Icon } from '../../components/ui/Icon';
 import {
+  completeStaffFollowUp,
   getStaffAvailability,
   getStaffClinicalRecords,
   getStaffConversationMessages,
@@ -22,6 +23,7 @@ import {
     saveStaffAvailability,
     saveStaffPreferences,
     startStaffConversation,
+    updateStaffLabResult,
     updateStaffProfile,
     updateStaffOrderStatus,
   type ClinicalRecord as ApiClinicalRecord,
@@ -99,9 +101,13 @@ type WorkspaceState = {
   draft: string;
   profileName: string;
   profilePhone: string;
+  profileDirty: boolean;
+  preferencesDirty: boolean;
   startTime: string;
   endTime: string;
   availabilityDirty: boolean;
+  stockDrafts: Record<string, string>;
+  stockDirty: Record<string, boolean>;
   recordFormOpen: boolean;
   labFormOpen: boolean;
   conversationFormOpen: boolean;
@@ -131,9 +137,12 @@ type WorkspaceAction =
   | { type: 'TOGGLE_SETTING'; key: keyof DoctorNotificationSettings }
   | { type: 'RECORD_CREATED'; record: ApiClinicalRecord }
   | { type: 'LAB_CREATED'; labResult: ApiLabResult }
+  | { type: 'LAB_UPDATED'; labResult: ApiLabResult }
   | { type: 'LAB_REVIEWED'; labResult: Pick<ApiLabResult, 'id' | 'status' | 'reviewedAt'> }
+  | { type: 'FOLLOW_UP_COMPLETED'; id: string }
   | { type: 'SERVICE_UPDATED'; service: ClinicServiceSetting }
   | { type: 'INVENTORY_UPDATED'; item: InventoryItem }
+  | { type: 'SET_STOCK_DRAFT'; productId: string; value: string }
   | { type: 'ORDER_UPDATED'; order: Pick<StaffOrder, 'id' | 'status'> }
   | { type: 'AVAILABILITY_UPDATED'; days: DoctorAvailabilityDay[] }
   | { type: 'PREFERENCES_UPDATED'; preferences: DoctorNotificationSettings }
@@ -201,9 +210,13 @@ function createInitialState(): WorkspaceState {
     draft: '',
     profileName: '',
     profilePhone: '',
+    profileDirty: false,
+    preferencesDirty: false,
     startTime: '08:00',
     endTime: '18:00',
     availabilityDirty: false,
+    stockDrafts: {},
+    stockDirty: {},
     recordFormOpen: false,
     labFormOpen: false,
     conversationFormOpen: false,
@@ -229,16 +242,22 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
         availability: action.availability,
         preferences: action.preferences,
         selectedConversationId: state.selectedConversationId || action.conversations[0]?.id || '',
-        profileName: action.profile.fullName,
-        profilePhone: action.profile.phone,
+        profileName: state.profileDirty ? state.profileName : action.profile.fullName,
+        profilePhone: state.profileDirty ? state.profilePhone : action.profile.phone,
         loading: false,
         loadError: null,
         serviceAvailability: Object.fromEntries(action.services.map((service) => [service.serviceId, service.isEnabled])),
         stockLevels: Object.fromEntries(action.inventory.map((item) => [item.productId, item.quantity])),
-        activeDays: Object.fromEntries(action.availability.map((day) => [String(day.weekday), day.isAvailable])),
-        notificationSettings: action.preferences,
-        startTime: action.availability[0]?.startsAt.slice(0, 5) ?? '08:00',
-        endTime: action.availability[0]?.endsAt.slice(0, 5) ?? '18:00',
+        stockDrafts: Object.fromEntries(action.inventory.map((item) => [
+          item.productId,
+          state.stockDirty[item.productId] ? state.stockDrafts[item.productId] ?? String(item.quantity) : String(item.quantity),
+        ])),
+        activeDays: state.availabilityDirty
+          ? state.activeDays
+          : Object.fromEntries(action.availability.map((day) => [String(day.weekday), day.isAvailable])),
+        notificationSettings: state.preferencesDirty ? state.notificationSettings : action.preferences,
+        startTime: state.availabilityDirty ? state.startTime : action.availability[0]?.startsAt.slice(0, 5) ?? '08:00',
+        endTime: state.availabilityDirty ? state.endTime : action.availability[0]?.endsAt.slice(0, 5) ?? '18:00',
       };
     case 'WORKSPACE_FAILED':
       return { ...state, loading: false, loadError: action.message };
@@ -250,20 +269,39 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
       return { ...state, records: [action.record, ...state.records], recordFormOpen: false, saving: false, actionError: null, notice: 'Clinical record saved.' };
     case 'LAB_CREATED':
       return { ...state, labResults: [action.labResult, ...state.labResults], labFormOpen: false, saving: false, actionError: null, notice: 'Lab request saved.' };
+    case 'LAB_UPDATED':
+      return { ...state, labResults: state.labResults.map((item) => item.id === action.labResult.id ? action.labResult : item), saving: false, actionError: null, notice: 'Lab result updated.' };
     case 'LAB_REVIEWED':
       return { ...state, labResults: state.labResults.map((item) => item.id === action.labResult.id ? { ...item, ...action.labResult } : item), saving: false, actionError: null, notice: 'Lab result marked reviewed.' };
+    case 'FOLLOW_UP_COMPLETED':
+      return { ...state, followUps: state.followUps.filter((item) => item.id !== action.id), saving: false, actionError: null, notice: 'Follow-up marked complete.' };
     case 'SERVICE_UPDATED':
       return { ...state, services: state.services.map((item) => item.serviceId === action.service.serviceId ? action.service : item), serviceAvailability: { ...state.serviceAvailability, [action.service.serviceId]: action.service.isEnabled }, saving: false, actionError: null, notice: 'Service availability saved.' };
     case 'INVENTORY_UPDATED':
-      return { ...state, inventory: [...state.inventory.filter((item) => item.productId !== action.item.productId), action.item], stockLevels: { ...state.stockLevels, [action.item.productId]: action.item.quantity }, saving: false, actionError: null, notice: 'Inventory quantity saved.' };
+      return {
+        ...state,
+        inventory: [...state.inventory.filter((item) => item.productId !== action.item.productId), action.item],
+        stockLevels: { ...state.stockLevels, [action.item.productId]: action.item.quantity },
+        stockDrafts: { ...state.stockDrafts, [action.item.productId]: String(action.item.quantity) },
+        stockDirty: { ...state.stockDirty, [action.item.productId]: false },
+        saving: false,
+        actionError: null,
+        notice: 'Inventory quantity saved.',
+      };
+    case 'SET_STOCK_DRAFT':
+      return {
+        ...state,
+        stockDrafts: { ...state.stockDrafts, [action.productId]: action.value },
+        stockDirty: { ...state.stockDirty, [action.productId]: true },
+      };
     case 'ORDER_UPDATED':
       return { ...state, orders: state.orders.map((item) => item.id === action.order.id ? { ...item, status: action.order.status } : item), saving: false, actionError: null, notice: 'Order status updated.' };
     case 'AVAILABILITY_UPDATED':
       return { ...state, availability: action.days, activeDays: Object.fromEntries(action.days.map((day) => [String(day.weekday), day.isAvailable])), availabilityDirty: false, saving: false, actionError: null, notice: 'Availability saved.' };
     case 'PREFERENCES_UPDATED':
-      return { ...state, preferences: action.preferences, notificationSettings: action.preferences, saving: false, actionError: null, notice: 'Notification preferences saved.' };
+      return { ...state, preferences: action.preferences, notificationSettings: action.preferences, preferencesDirty: false, saving: false, actionError: null, notice: 'Notification preferences saved.' };
     case 'PROFILE_UPDATED':
-      return { ...state, profile: action.profile, profileName: action.profile.fullName, profilePhone: action.profile.phone, saving: false, actionError: null, notice: 'Profile saved.' };
+      return { ...state, profile: action.profile, profileName: action.profile.fullName, profilePhone: action.profile.phone, profileDirty: false, saving: false, actionError: null, notice: 'Profile saved.' };
     case 'SET_MESSAGES':
       return { ...state, messages: action.messages };
     case 'CONVERSATIONS_UPDATED':
@@ -273,15 +311,15 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
     case 'TOGGLE_DAY':
       return { ...state, activeDays: { ...state.activeDays, [action.day]: !state.activeDays[action.day] }, availabilityDirty: true };
     case 'TOGGLE_SETTING':
-      return { ...state, notificationSettings: { ...state.notificationSettings, [action.key]: !state.notificationSettings[action.key] } };
+      return { ...state, notificationSettings: { ...state.notificationSettings, [action.key]: !state.notificationSettings[action.key] }, preferencesDirty: true };
     case 'SELECT_CONVERSATION':
       return { ...state, selectedConversationId: action.id, messages: [] };
     case 'SET_DRAFT':
       return { ...state, draft: action.value };
     case 'SET_PROFILE_NAME':
-      return { ...state, profileName: action.value };
+      return { ...state, profileName: action.value, profileDirty: true };
     case 'SET_PROFILE_PHONE':
-      return { ...state, profilePhone: action.value };
+      return { ...state, profilePhone: action.value, profileDirty: true };
     case 'SET_START_TIME':
       return { ...state, startTime: action.value, availabilityDirty: true };
     case 'SET_END_TIME':
@@ -369,42 +407,66 @@ export function DoctorWorkspacePages({
   onProfileUpdated: (name: string) => void;
 }) {
   const [state, dispatch] = useReducer(workspaceReducer, undefined, createInitialState);
+  const [editingLabId, setEditingLabId] = useState<string | null>(null);
+  const [labStatusDraft, setLabStatusDraft] = useState<'in_lab' | 'ready'>('in_lab');
+  const [labResultDraft, setLabResultDraft] = useState('');
   useEffect(() => {
     let active = true;
-    Promise.all([
-      getStaffClinicalRecords(),
-      getStaffLabResults(),
-      getStaffFollowUps(),
-      getStaffConversations(),
-      getStaffServices(),
-      getStaffInventory(),
-      getStaffOrders(),
-      getStaffProfile(),
-      getStaffAvailability(),
-      getStaffPreferences(),
-    ]).then(([records, labs, followUps, conversations, services, inventory, orders, profile, availability, preferences]) => {
-      if (!active) return;
-      dispatch({
-        type: 'WORKSPACE_LOADED',
-        records: records.records,
-        labResults: labs.labResults,
-        followUps: followUps.followUps,
-        conversations: conversations.conversations,
-        services: services.services,
-        inventory: inventory.inventory,
-        orders: orders.orders,
-        profile: profile.profile,
-        availability: availability.availability,
-        preferences: preferences.preferences.notificationSettings,
-      });
-    }).catch((error: unknown) => {
-      if (!active) return;
-      dispatch({
-        type: 'WORKSPACE_FAILED',
-        message: error instanceof Error ? error.message : 'Could not load doctor workspace data.',
-      });
-    });
-    return () => { active = false; };
+    let loading = false;
+    const refresh = async () => {
+      if (loading) return;
+      loading = true;
+      try {
+        const [records, labs, followUps, conversations, services, inventory, orders, profile, availability, preferences] = await Promise.all([
+          getStaffClinicalRecords(),
+          getStaffLabResults(),
+          getStaffFollowUps(),
+          getStaffConversations(),
+          getStaffServices(),
+          getStaffInventory(),
+          getStaffOrders(),
+          getStaffProfile(),
+          getStaffAvailability(),
+          getStaffPreferences(),
+        ]);
+        if (!active) return;
+        dispatch({
+          type: 'WORKSPACE_LOADED',
+          records: records.records,
+          labResults: labs.labResults,
+          followUps: followUps.followUps,
+          conversations: conversations.conversations,
+          services: services.services,
+          inventory: inventory.inventory,
+          orders: orders.orders,
+          profile: profile.profile,
+          availability: availability.availability,
+          preferences: preferences.preferences.notificationSettings,
+        });
+      } catch (error) {
+        if (active) {
+          dispatch({
+            type: 'WORKSPACE_FAILED',
+            message: error instanceof Error ? error.message : 'Could not load doctor workspace data.',
+          });
+        }
+      } finally {
+        loading = false;
+      }
+    };
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) void refresh();
+    };
+    void refresh();
+    const timer = window.setInterval(refreshIfVisible, 30_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
   }, []);
   useEffect(() => {
     if (!state.selectedConversationId) return;
@@ -416,6 +478,11 @@ export function DoctorWorkspacePages({
     });
     return () => { active = false; };
   }, [state.selectedConversationId]);
+  useEffect(() => {
+    if (state.profile && !state.profileDirty && state.profile.fullName !== doctorName) {
+      onProfileUpdated(state.profile.fullName);
+    }
+  }, [doctorName, onProfileUpdated, state.profile, state.profileDirty]);
   const query = state.query.trim().toLowerCase();
   const todayManila = manilaDate();
   const weekManila = manilaDate(7);
@@ -465,7 +532,12 @@ export function DoctorWorkspacePages({
     patient: item.petName,
     owner: item.ownerName,
     reason: item.summary,
-    lastVisit: 'Clinical record follow-up',
+    recordDate: new Date(item.recordCreatedAt).toLocaleDateString('en-PH', {
+      timeZone: 'Asia/Manila',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }),
     due: new Date(`${item.followUpAt.slice(0, 10)}T12:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }),
     status: item.followUpAt.slice(0, 10) < todayManila
       ? 'Overdue'
@@ -520,6 +592,35 @@ export function DoctorWorkspacePages({
       dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not save this lab request.' });
     }
   };
+  const beginLabEdit = (result: ApiLabResult) => {
+    setEditingLabId(result.id);
+    setLabStatusDraft(result.status === 'ready' ? 'ready' : 'in_lab');
+    setLabResultDraft(result.resultText);
+  };
+  const saveLabResult = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingLabId) return;
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { labResult } = await updateStaffLabResult(editingLabId, {
+        status: labStatusDraft,
+        resultText: labResultDraft.trim(),
+      });
+      dispatch({ type: 'LAB_UPDATED', labResult });
+      setEditingLabId(null);
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not update this lab result.' });
+    }
+  };
+  const completeFollowUp = async (id: string) => {
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      await completeStaffFollowUp(id);
+      dispatch({ type: 'FOLLOW_UP_COMPLETED', id });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not complete this follow-up.' });
+    }
+  };
   const markLabReviewed = async (id: string) => {
     dispatch({ type: 'SAVING', value: true });
     try {
@@ -538,8 +639,13 @@ export function DoctorWorkspacePages({
       dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not update this service.' });
     }
   };
-  const adjustStock = async (productId: string, amount: number) => {
-    const quantity = Math.max(0, (state.stockLevels[productId] ?? 0) + amount);
+  const saveStock = async (productId: string) => {
+    const rawQuantity = state.stockDrafts[productId] ?? '';
+    const quantity = Number(rawQuantity);
+    if (rawQuantity.trim() === '' || !Number.isInteger(quantity) || quantity < 0 || quantity > 1_000_000) {
+      dispatch({ type: 'ACTION_FAILED', message: 'Enter a whole-number stock quantity from 0 to 1,000,000.' });
+      return;
+    }
     dispatch({ type: 'SAVING', value: true });
     try {
       const { item } = await setStaffInventoryQuantity(productId, quantity);
@@ -581,9 +687,14 @@ export function DoctorWorkspacePages({
     }
   };
   const saveProfile = async () => {
+    const fullName = state.profileName.trim();
+    if (!fullName) {
+      dispatch({ type: 'ACTION_FAILED', message: 'Enter your display name before saving.' });
+      return;
+    }
     dispatch({ type: 'SAVING', value: true });
     try {
-      const { profile } = await updateStaffProfile({ fullName: state.profileName, phone: state.profilePhone });
+      const { profile } = await updateStaffProfile({ fullName, phone: state.profilePhone });
       dispatch({ type: 'PROFILE_UPDATED', profile });
       onProfileUpdated(profile.fullName);
     } catch (error) {
@@ -656,7 +767,11 @@ export function DoctorWorkspacePages({
       {view === 'records' && <>
         <div className={styles.metrics}>
           <article><span>Records and profiles</span><b>{allRecords.length}</b><small>Across {patients.length} assigned patients</small></article>
-          <article><span>Created this month</span><b>{state.records.filter((record) => new Date(record.createdAt).getMonth() === new Date().getMonth()).length}</b><small>Saved clinical notes</small></article>
+          <article><span>Created this month</span><b>{state.records.filter((record) => {
+            const createdAt = new Date(record.createdAt);
+            const now = new Date();
+            return createdAt.getMonth() === now.getMonth() && createdAt.getFullYear() === now.getFullYear();
+          }).length}</b><small>Saved clinical notes</small></article>
           <article><span>Follow-ups scheduled</span><b>{state.records.filter((record) => record.followUpAt).length}</b><small>Linked to clinical records</small></article>
           <article><span>Patient profiles</span><b>{patients.length}</b><small>From the clinic database</small></article>
         </div>
@@ -696,12 +811,32 @@ export function DoctorWorkspacePages({
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search patient or test..." /></div>
         <FilterButtons values={LAB_FILTERS} selected={state.filters.lab} onSelect={(value) => dispatch({ type: 'SET_FILTER', key: 'lab', value })} />
         <div className={styles.tableWrap}><table className={styles.table}>
-          <thead><tr><th>Patient</th><th>Test</th><th>Requested</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>{labRows.map((result) => <tr key={result.id}>
-            <td><button type="button" className={styles.patientLink} onClick={() => onOpenPatient(result.petId)}><b>{result.patient}</b><small>{result.owner}</small></button></td>
-            <td>{result.test}</td><td>{result.date}</td><td><Status>{result.displayStatus}</Status></td>
-            <td>{result.displayStatus === 'Ready' ? <button type="button" className={styles.textButton} disabled={state.saving} onClick={() => void markLabReviewed(result.id)}>Mark reviewed</button> : <span className={styles.muted}>{result.displayStatus === 'Reviewed' ? 'Reviewed' : 'Awaiting result'}</span>}</td>
-          </tr>)}{labRows.length === 0 && <tr><td colSpan={5} className={styles.empty}>No lab results match this filter.</td></tr>}</tbody>
+          <thead><tr><th>Patient</th><th>Test</th><th>Requested</th><th>Result</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody>{labRows.map((result) => (
+            <Fragment key={result.id}>
+              <tr>
+                <td><button type="button" className={styles.patientLink} onClick={() => onOpenPatient(result.petId)}><b>{result.patient}</b><small>{result.owner}</small></button></td>
+                <td>{result.test}</td><td>{result.date}</td><td className={styles.summaryCell}>{result.resultText || 'Not entered yet'}</td><td><Status>{result.displayStatus}</Status></td>
+                <td><div className={styles.rowActions}>
+                  {result.displayStatus !== 'Reviewed' && <button type="button" className={styles.textButton} disabled={state.saving} onClick={() => beginLabEdit(result)}>Update result</button>}
+                  {result.displayStatus === 'Ready' && <button type="button" className={styles.textButton} disabled={state.saving} onClick={() => void markLabReviewed(result.id)}>Mark reviewed</button>}
+                  {result.displayStatus === 'Reviewed' && <span className={styles.muted}>Reviewed</span>}
+                </div></td>
+              </tr>
+              {editingLabId === result.id && <tr><td colSpan={6}>
+                <form className={styles.dataForm} onSubmit={(event) => void saveLabResult(event)}>
+                  <label>Status<select value={labStatusDraft} onChange={(event) => setLabStatusDraft(event.target.value as 'in_lab' | 'ready')}>
+                    <option value="in_lab">In lab</option><option value="ready">Ready for review</option>
+                  </select></label>
+                  <label className={styles.wideField}>Result<textarea value={labResultDraft} onChange={(event) => setLabResultDraft(event.target.value)} maxLength={5000} rows={3} required={labStatusDraft === 'ready'} /></label>
+                  <div className={styles.formActions}>
+                    <button type="button" className={styles.secondaryButton} onClick={() => setEditingLabId(null)}>Cancel</button>
+                    <button type="submit" className={styles.primaryButton} disabled={state.saving}>{state.saving ? 'Saving…' : 'Save lab update'}</button>
+                  </div>
+                </form>
+              </td></tr>}
+            </Fragment>
+          ))}{labRows.length === 0 && <tr><td colSpan={6} className={styles.empty}>No lab results match this filter.</td></tr>}</tbody>
         </table></div>
       </>}
 
@@ -715,11 +850,15 @@ export function DoctorWorkspacePages({
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search by pet or owner..." /></div>
         <FilterButtons values={FOLLOW_UP_FILTERS} selected={state.filters['follow-up']} onSelect={(value) => dispatch({ type: 'SET_FILTER', key: 'follow-up', value })} />
         <div className={styles.tableWrap}><table className={styles.table}>
-          <thead><tr><th>Patient</th><th>Reason for follow-up</th><th>Last visit</th><th>Due date</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Patient</th><th>Reason for follow-up</th><th>Clinical record date</th><th>Due date</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>{followUpRows.map((item) => <tr key={item.id}>
             <td><button type="button" className={styles.patientLink} onClick={() => onOpenPatient(item.petId)}><b>{item.patient}</b><small>{item.owner}</small></button></td>
-            <td>{item.reason}</td><td>{item.lastVisit}</td><td><b>{item.due}</b></td><td><Status>{item.status}</Status></td>
-            <td><div className={styles.rowActions}><button type="button" className={styles.softButton} onClick={() => onNavigate('calendar')}>Schedule</button><button type="button" className={styles.textButton} onClick={() => onNavigate('appointments')}>Appointments</button></div></td>
+            <td>{item.reason}</td><td>{item.recordDate}</td><td><b>{item.due}</b></td><td><Status>{item.status}</Status></td>
+            <td><div className={styles.rowActions}>
+              <button type="button" className={styles.softButton} onClick={() => onNavigate('calendar')}>View calendar</button>
+              <button type="button" className={styles.textButton} onClick={() => onNavigate('appointments')}>Appointments</button>
+              <button type="button" className={styles.textButton} disabled={state.saving} onClick={() => void completeFollowUp(item.id)}>Mark complete</button>
+            </div></td>
           </tr>)}{followUpRows.length === 0 && <tr><td colSpan={6} className={styles.empty}>No follow-ups match this filter.</td></tr>}</tbody>
         </table></div>
       </>}
@@ -778,13 +917,24 @@ export function DoctorWorkspacePages({
         </div>
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search products..." /></div>
         <div className={styles.tableWrap}><table className={styles.table}>
-          <thead><tr><th>Product</th><th>Category</th><th>Unit price</th><th>Stock</th><th>Level</th><th>Adjust</th></tr></thead>
+          <thead><tr><th>Product</th><th>Category</th><th>Unit price</th><th>Stock</th><th>Level</th><th>Set stock</th></tr></thead>
           <tbody>{visibleProducts.map((product: Product) => {
             const quantity = state.stockLevels[product.id];
             const level = quantity === undefined ? 'Not tracked' : quantity === 0 ? 'Out of stock' : quantity < 5 ? 'Low stock' : 'In stock';
             return <tr key={product.id}>
               <td><span className={styles.productCell}><span className={styles.serviceEmoji}>{product.emoji}</span><b>{product.name}</b></span></td><td>{product.category}</td><td>{formatPeso(product.price)}</td><td><b>{quantity ?? '—'}</b></td><td><Status>{level}</Status></td>
-              <td><div className={styles.stepper}><button type="button" aria-label={`Decrease ${product.name} stock`} disabled={quantity === undefined || state.saving} onClick={() => void adjustStock(product.id, -1)}>−</button><button type="button" aria-label={`Increase ${product.name} stock`} disabled={state.saving} onClick={() => void adjustStock(product.id, 1)}>+</button></div></td>
+              <td><div className={styles.stockEditor}>
+                <input
+                  type="number"
+                  aria-label={`${product.name} stock quantity`}
+                  min={0}
+                  max={1_000_000}
+                  step={1}
+                  value={state.stockDrafts[product.id] ?? String(quantity ?? 0)}
+                  onChange={(event) => dispatch({ type: 'SET_STOCK_DRAFT', productId: product.id, value: event.target.value })}
+                />
+                <button type="button" className={styles.softButton} disabled={state.saving || !state.stockDirty[product.id]} onClick={() => void saveStock(product.id)}>Save</button>
+              </div></td>
             </tr>;
           })}{visibleProducts.length === 0 && <tr><td colSpan={6} className={styles.empty}>No products match this search.</td></tr>}</tbody>
         </table></div>
@@ -836,8 +986,8 @@ export function DoctorWorkspacePages({
       {view === 'profile' && <div className={styles.profileGrid}>
         <article className={styles.profileCard}>
           <div className={styles.profileIdentity}><span className={styles.profileAvatar}>🩺</span><div><h2>{doctorName}</h2><p>Veterinarian</p></div></div>
-          <label className={styles.fieldLabel}>Display name<input value={state.profileName || doctorName} onChange={(event) => dispatch({ type: 'SET_PROFILE_NAME', value: event.target.value })} /></label>
-          <label className={styles.fieldLabel}>Phone<input value={state.profilePhone} onChange={(event) => dispatch({ type: 'SET_PROFILE_PHONE', value: event.target.value })} /></label>
+          <label className={styles.fieldLabel}>Display name<input value={state.profileName} maxLength={120} required onChange={(event) => dispatch({ type: 'SET_PROFILE_NAME', value: event.target.value })} /></label>
+          <label className={styles.fieldLabel}>Phone<input value={state.profilePhone} maxLength={32} onChange={(event) => dispatch({ type: 'SET_PROFILE_PHONE', value: event.target.value })} /></label>
           <label className={styles.fieldLabel}>Email<input value={state.profile?.email ?? ''} readOnly /></label>
           <label className={styles.fieldLabel}>Specialization<input value={state.profile?.specialization ?? 'Not provided'} readOnly /></label>
           <label className={styles.fieldLabel}>Account role<input value="Veterinarian" readOnly /></label>
