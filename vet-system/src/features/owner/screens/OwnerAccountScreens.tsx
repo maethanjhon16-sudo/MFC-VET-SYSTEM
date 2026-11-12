@@ -1,11 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Icon } from '../../../components/ui/Icon';
 import {
-  getOwnerAppointments,
-  getOwnerConversations,
-  getOwnerMedicalRecords,
+  getOwnerNotifications,
   getOwnerProfile,
+  markOwnerNotificationRead,
+  markOwnerNotificationsRead,
   updateOwnerProfile,
+  type ActivityNotification,
   type OwnerProfile,
 } from '../../auth/api';
 import { CLINIC_ADDRESS, CLINIC_HOURS } from '../../clinicInfo';
@@ -99,85 +100,91 @@ export function OwnerProfileScreen({ onNameUpdated }: { onNameUpdated: (name: st
   );
 }
 
-type Update = { id: string; date: string; title: string; detail: string; target: 'appointments' | 'messages' | 'records' };
-
 export function OwnerNotifications({ nav }: { nav: OwnerNav }) {
-  const [updates, setUpdates] = useState<Update[]>([]);
+  const [notifications, setNotifications] = useState<ActivityNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    Promise.all([getOwnerAppointments(), getOwnerConversations(), getOwnerMedicalRecords()])
-      .then(([{ appointments }, { conversations }, { records, labResults }]) => {
-        if (!active) return;
-        const next: Update[] = [
-          ...appointments.filter((item) => item.status === 'pending' || item.status === 'confirmed' || item.status === 'declined')
-            .map((item) => ({
-              id: `appointment-${item.id}`,
-              date: item.createdAt,
-              title: item.requestSource === 'doctor_follow_up' && item.status === 'pending'
-                ? 'Veterinarian suggested a revisit'
-                : item.status === 'confirmed' ? 'Appointment confirmed' : item.status === 'declined' ? 'Appointment request declined' : 'Appointment request received',
-              detail: `${item.petName} · ${item.serviceName} · ${new Date(item.scheduledAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}`,
-              target: 'appointments' as const,
-            })),
-          ...labResults.filter((item) => item.status === 'ready' || item.status === 'reviewed')
-            .map((item) => ({
-              id: `lab-${item.id}`,
-              date: item.reviewedAt ?? item.requestedAt,
-              title: 'Lab result available',
-              detail: `${item.petName} · ${item.testName}`,
-              target: 'records' as const,
-            })),
-          ...records.filter((item) => (item.followUpType === 'medicine' || item.followUpAt) && !item.followUpCompletedAt)
-            .map((item) => ({
-              id: `follow-up-${item.id}`,
-              date: item.createdAt,
-              title: item.followUpType === 'medicine' ? 'Medicine recommendation' : 'Revisit recommended',
-              detail: item.followUpType === 'medicine'
-                ? `${item.petName} · ${item.followUpMedicineName} · ${item.followUpMedicineDose}`
-                : `${item.petName} · ${item.followUpAppointmentAt ? new Date(item.followUpAppointmentAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }) : item.followUpAt}`,
-              target: 'records' as const,
-            })),
-          ...conversations.filter((item) => item.unreadCount > 0)
-            .map((item) => ({
-              id: `message-${item.id}`,
-              date: item.latestMessageAt ?? item.updatedAt,
-              title: `${item.unreadCount} unread message${item.unreadCount === 1 ? '' : 's'}`,
-              detail: `${item.doctorName} · ${item.petName}`,
-              target: 'messages' as const,
-            })),
-        ];
-        setUpdates(next.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)));
-        setError(null);
-      })
-      .catch((loadError: unknown) => {
-        if (active) setError(accountError(loadError, 'Could not load your updates.'));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => { active = false; };
+  const load = useCallback(async () => {
+    try {
+      const result = await getOwnerNotifications();
+      setNotifications(result.notifications);
+      setUnreadCount(result.unreadCount);
+      setError(null);
+    } catch (loadError) {
+      setError(accountError(loadError, 'Could not load your updates.'));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const open = (target: Update['target']) => {
-    if (target === 'appointments') nav.appointments();
-    else if (target === 'messages') nav.messages();
+  useEffect(() => {
+    void load();
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) void load();
+    };
+    const timer = window.setInterval(refreshIfVisible, 15_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
+  }, [load]);
+
+  const open = async (item: ActivityNotification) => {
+    if (!item.readAt) {
+      try {
+        await markOwnerNotificationRead(item.id);
+        setNotifications((current) => current.map((notification) =>
+          notification.id === item.id ? { ...notification, readAt: new Date().toISOString() } : notification,
+        ));
+        setUnreadCount((current) => Math.max(0, current - 1));
+      } catch (readError) {
+        setError(accountError(readError, 'Could not mark this notification as read.'));
+      }
+    }
+    if (item.eventType.includes('appointment') || item.eventType === 'revisit_suggested') nav.appointments();
+    else if (item.eventType === 'care_team_message') nav.messages();
     else nav.records();
+  };
+
+  const markAllRead = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await markOwnerNotificationsRead();
+      const readAt = new Date().toISOString();
+      setNotifications((current) => current.map((item) => item.readAt ? item : { ...item, readAt }));
+      setUnreadCount(0);
+    } catch (readError) {
+      setError(accountError(readError, 'Could not mark notifications as read.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className={s.stack}>
-      <header className={s.pageHeader}><div className={s.title}><span className={s.eyebrow}>ACTIVITY</span><h1>Notifications &amp; updates</h1><p>Appointment status, test results, follow-ups, and unread messages.</p></div></header>
+      <header className={s.pageHeader}>
+        <div className={s.title}><span className={s.eyebrow}>ACTIVITY</span><h1>Notifications &amp; updates</h1><p>Doctor updates for your pets, appointment changes, and care-team messages.</p></div>
+        <div className={s.headerActions}>
+          <span className={s.badge}>{unreadCount} unread</span>
+          <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={saving || unreadCount === 0} onClick={() => void markAllRead()}>{saving ? 'Saving…' : 'Mark all read'}</button>
+        </div>
+      </header>
       {error && <p className={s.pageError} role="alert">{error}</p>}
       {loading && <p className={s.empty} aria-live="polite">Loading your updates…</p>}
-      {!loading && !error && updates.length === 0 && <section className={`${s.card} ${s.emptyCard}`}><h2>You’re all caught up</h2><p>New appointment changes, messages, and test results will appear here.</p></section>}
+      {!loading && !error && notifications.length === 0 && <section className={`${s.card} ${s.emptyCard}`}><h2>You’re all caught up</h2><p>New appointment changes, messages, and doctor updates will appear here.</p></section>}
       <section className={s.updateList}>
-        {updates.map((update) => (
-          <button type="button" className={`${s.card} ${s.updateRow}`} key={update.id} onClick={() => open(update.target)}>
-            <span className={s.updateIcon}><Icon name={update.target === 'messages' ? 'quick-chat' : update.target === 'records' ? 'quick-file' : 'quick-calendar'} size={22} /></span>
-            <span><b>{update.title}</b><small>{update.detail}</small><time>{new Date(update.date).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' })}</time></span>
+        {notifications.map((item) => (
+          <button type="button" className={`${s.card} ${s.updateRow} ${item.readAt ? '' : s.updateUnread}`} key={item.id} onClick={() => void open(item)}>
+            <span className={s.updateIcon}><Icon name={item.eventType === 'care_team_message' ? 'quick-chat' : item.eventType.includes('appointment') || item.eventType === 'revisit_suggested' ? 'quick-calendar' : 'quick-file'} size={22} /></span>
+            <span><b>{item.title}</b><small>{item.detail}</small><small>{item.actorName} · {item.actorRole === 'doctor' ? 'Veterinarian' : item.actorRole === 'owner' ? 'Pet owner' : item.actorRole}</small><time>{new Date(item.createdAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}</time></span>
+            {!item.readAt && <span className={s.unreadDot} aria-label="Unread" />}
             <Icon name="chev-row" size={18} />
           </button>
         ))}

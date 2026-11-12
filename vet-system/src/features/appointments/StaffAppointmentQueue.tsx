@@ -95,6 +95,17 @@ export function StaffAppointmentQueue({
 
   useEffect(() => {
     void load();
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) void load();
+    };
+    const timer = window.setInterval(refreshIfVisible, 20_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
   }, [load]);
 
   const decide = async (appointment: Appointment, decision: 'confirm' | 'decline', selectElement?: HTMLSelectElement) => {

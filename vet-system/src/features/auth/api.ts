@@ -122,6 +122,31 @@ export function getDoctorApplications() {
   return request<{ applications: DoctorApplication[] }>('/api/admin/doctor-applications', undefined, 'GET');
 }
 
+export interface ActivityNotification {
+  id: string;
+  actorName: string;
+  actorRole: AccountRole | 'system';
+  eventType: string;
+  title: string;
+  detail: string;
+  entityType: string;
+  entityId: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export function getAdminActivity() {
+  return request<{ events: ActivityNotification[]; unreadCount: number }>('/api/admin/activity', undefined, 'GET');
+}
+
+export function markAdminActivityRead() {
+  return request<{ markedRead: number }>('/api/admin/activity/read', {});
+}
+
+export function markAdminActivityItemRead(id: string) {
+  return request<{ markedRead: boolean }>(`/api/admin/activity/${encodeURIComponent(id)}/read`, {});
+}
+
 export function approveDoctorApplication(id: string) {
   return request<{ approved: boolean }>(`/api/admin/doctor-applications/${encodeURIComponent(id)}/approve`);
 }
@@ -215,6 +240,22 @@ export function getOwnerMedicalRecords() {
     undefined,
     'GET',
   );
+}
+
+export function getOwnerNotificationCount() {
+  return request<{ unreadCount: number }>('/api/owner/notifications/unread-count', undefined, 'GET');
+}
+
+export function getOwnerNotifications() {
+  return request<{ notifications: ActivityNotification[]; unreadCount: number }>('/api/owner/notifications', undefined, 'GET');
+}
+
+export function markOwnerNotificationsRead() {
+  return request<{ markedRead: number }>('/api/owner/notifications/read', {});
+}
+
+export function markOwnerNotificationRead(id: string) {
+  return request<{ markedRead: boolean }>(`/api/owner/notifications/${encodeURIComponent(id)}/read`, {});
 }
 
 export type AppointmentStatus = 'pending' | 'confirmed' | 'declined' | 'cancelled';

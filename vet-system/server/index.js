@@ -297,6 +297,21 @@ function appointmentDto(row) {
   };
 }
 
+function activityEventDto(row) {
+  return {
+    id: row.id,
+    actorName: row.actor_name,
+    actorRole: row.actor_role,
+    eventType: row.event_type,
+    title: row.title,
+    detail: row.detail,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    createdAt: row.created_at,
+    readAt: row.read_at,
+  };
+}
+
 async function createSession(client, userId, remember) {
   const token = randomBytes(32).toString('base64url');
   const lifetime = remember ? sessionLifetime.remembered : sessionLifetime.regular;
@@ -570,10 +585,10 @@ app.patch('/api/owner/profile', requireSameOrigin, requireOwner, asyncRoute(asyn
   }
   const result = await pool.query(
     `UPDATE users
-     SET full_name = $2, phone = $3, province = $4, city = $5, barangay = $6
+     SET full_name = $2, phone = $3, province = $4, city = $5, barangay = $6, updated_by = $7
      WHERE id = $1 AND role = 'owner'
      RETURNING id, full_name AS "fullName", email, phone, province, city, barangay`,
-    [req.user.id, fullName, phone, province || null, city || null, barangay || null],
+    [req.user.id, fullName, phone, province || null, city || null, barangay || null, req.user.id],
   );
   if (!result.rowCount) return res.status(404).json({ error: 'Your owner profile could not be found.' });
   return res.json({ profile: result.rows[0] });
@@ -674,6 +689,62 @@ app.get('/api/owner/medical-records', requireOwner, asyncRoute(async (req, res) 
     ),
   ]);
   res.json({ records: records.rows, labResults: labResults.rows });
+}));
+
+app.get('/api/owner/notifications/unread-count', requireOwner, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `SELECT count(*)::integer AS count
+     FROM activity_events
+     WHERE recipient_owner_id = $1 AND owner_read_at IS NULL`,
+    [req.user.id],
+  );
+  return res.json({ unreadCount: result.rows[0].count });
+}));
+
+app.get('/api/owner/notifications', requireOwner, asyncRoute(async (req, res) => {
+  const [events, unread] = await Promise.all([
+    pool.query(
+      `SELECT id, actor_name, actor_role, event_type, title, detail,
+              entity_type, entity_id, created_at, owner_read_at AS read_at
+       FROM activity_events
+       WHERE recipient_owner_id = $1
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      [req.user.id],
+    ),
+    pool.query(
+      `SELECT count(*)::integer AS count
+       FROM activity_events
+       WHERE recipient_owner_id = $1 AND owner_read_at IS NULL`,
+      [req.user.id],
+    ),
+  ]);
+  return res.json({
+    notifications: events.rows.map(activityEventDto),
+    unreadCount: unread.rows[0].count,
+  });
+}));
+
+app.post('/api/owner/notifications/read', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `UPDATE activity_events
+     SET owner_read_at = now()
+     WHERE recipient_owner_id = $1 AND owner_read_at IS NULL`,
+    [req.user.id],
+  );
+  return res.json({ markedRead: result.rowCount });
+}));
+
+app.post('/api/owner/notifications/:id/read', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `UPDATE activity_events
+     SET owner_read_at = now()
+     WHERE id = $1 AND recipient_owner_id = $2 AND owner_read_at IS NULL
+     RETURNING id`,
+    [req.params.id, req.user.id],
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'That unread notification was not found.' });
+  return res.json({ markedRead: true });
 }));
 
 app.post('/api/owner/pets', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
@@ -842,10 +913,10 @@ app.post('/api/owner/appointments', requireSameOrigin, requireOwner, appointment
 app.post('/api/owner/appointments/:id/cancel', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
   const result = await pool.query(
     `UPDATE appointments
-     SET status = 'cancelled', updated_at = now()
+     SET status = 'cancelled', updated_by = $3, updated_at = now()
      WHERE id = $1 AND owner_id = $2 AND status = 'pending'
      RETURNING id`,
-    [req.params.id, req.user.id],
+    [req.params.id, req.user.id, req.user.id],
   );
   if (!result.rowCount) return res.status(404).json({ error: 'Only your pending appointment requests can be cancelled.' });
   return res.json({ cancelled: true });
@@ -907,8 +978,8 @@ app.post('/api/owner/appointments/:id/decision', requireSameOrigin, requireOwner
 
     const status = decision === 'confirm' ? 'confirmed' : 'declined';
     await client.query(
-      'UPDATE appointments SET status = $2, updated_at = now() WHERE id = $1',
-      [appointment.id, status],
+      'UPDATE appointments SET status = $2, updated_by = $3, updated_at = now() WHERE id = $1',
+      [appointment.id, status, req.user.id],
     );
     await client.query('COMMIT');
     transactionOpen = false;
@@ -1144,8 +1215,8 @@ app.post('/api/owner/orders', requireSameOrigin, requireOwner, appointmentLimite
     await client.query(
       `INSERT INTO orders (
          id, owner_id, status, payment_method, fulfillment_method,
-         delivery_address, contact_phone, total_amount, stock_reserved
-       ) VALUES ($1, $2, 'new', $3, $4, $5, $6, $7, true)`,
+         delivery_address, contact_phone, total_amount, stock_reserved, updated_by
+       ) VALUES ($1, $2, 'new', $3, $4, $5, $6, $7, true, $2)`,
       [
         orderId, req.user.id, paymentMethod, fulfillmentMethod,
         fulfillmentMethod === 'delivery' ? deliveryAddress : '', contactPhone, total,
@@ -1370,8 +1441,8 @@ app.post('/api/staff/clinical-records', requireSameOrigin, requireClinicalStaff,
   );
   if (!doctor.rowCount) return res.status(400).json({ error: 'Choose an active veterinarian.' });
   const result = await pool.query(
-    `INSERT INTO clinical_records (id, pet_id, doctor_id, record_type, summary, diagnosis, treatment, follow_up_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO clinical_records (id, pet_id, doctor_id, record_type, summary, diagnosis, treatment, follow_up_at, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $3)
      RETURNING id, pet_id AS "petId", appointment_id AS "appointmentId",
        record_type AS "recordType", summary, diagnosis, treatment,
      follow_up_at AS "followUpAt", follow_up_type AS "followUpType",
@@ -1413,8 +1484,8 @@ app.post('/api/staff/lab-results', requireSameOrigin, requireClinicalStaff, asyn
     return res.status(400).json({ error: 'Choose a valid appointment.' });
   }
   const result = await pool.query(
-    `INSERT INTO lab_results (id, pet_id, doctor_id, appointment_id, test_name)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO lab_results (id, pet_id, doctor_id, appointment_id, test_name, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $3)
      RETURNING id, pet_id AS "petId", appointment_id AS "appointmentId",
        test_name AS "testName", status, result_text AS "resultText",
        requested_at AS "requestedAt", reviewed_at AS "reviewedAt"`,
@@ -1431,11 +1502,11 @@ app.patch('/api/staff/lab-results/:id', requireSameOrigin, requireClinicalStaff,
   }
   const updated = await pool.query(
     `UPDATE lab_results
-     SET status = $2, result_text = $3, reviewed_at = NULL
+     SET status = $2, result_text = $3, reviewed_at = NULL, updated_by = $6
      WHERE id = $1 AND status IN ('pending', 'in_lab', 'ready')
        AND ($4 = 'admin' OR doctor_id = $5)
      RETURNING id`,
-    [req.params.id, status, resultText, req.user.role, req.user.id],
+    [req.params.id, status, resultText, req.user.role, req.user.id, req.user.id],
   );
   if (!updated.rowCount) return res.status(404).json({ error: 'That editable lab request was not found.' });
   const result = await pool.query(
@@ -1455,10 +1526,10 @@ app.patch('/api/staff/lab-results/:id', requireSameOrigin, requireClinicalStaff,
 app.post('/api/staff/lab-results/:id/review', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
   const result = await pool.query(
     `UPDATE lab_results
-     SET status = 'reviewed', reviewed_at = now()
+     SET status = 'reviewed', reviewed_at = now(), updated_by = $4
      WHERE id = $1 AND status = 'ready' AND ($2 = 'admin' OR doctor_id = $3)
     RETURNING id, status, reviewed_at AS "reviewedAt"`,
-    [req.params.id, req.user.role, req.user.id],
+    [req.params.id, req.user.role, req.user.id, req.user.id],
   );
   if (!result.rowCount) return res.status(404).json({ error: 'That ready lab result was not found.' });
   return res.json({ labResult: result.rows[0] });
@@ -1531,8 +1602,8 @@ app.post('/api/staff/follow-ups', requireSameOrigin, requireClinicalStaff, appoi
     const record = await pool.query(
       `INSERT INTO clinical_records (
          id, pet_id, doctor_id, record_type, summary, follow_up_type,
-         follow_up_medicine_name, follow_up_medicine_dose, follow_up_medicine_instructions
-       ) VALUES ($1, $2, $3, 'Medication recommendation', $4, 'medicine', $5, $6, $7)
+         follow_up_medicine_name, follow_up_medicine_dose, follow_up_medicine_instructions, updated_by
+       ) VALUES ($1, $2, $3, 'Medication recommendation', $4, 'medicine', $5, $6, $7, $8)
        RETURNING id, pet_id AS "petId", record_type AS "recordType", summary,
          created_at AS "recordCreatedAt", follow_up_at AS "followUpAt",
          follow_up_type AS "followUpType", follow_up_medicine_name AS "medicineName",
@@ -1540,7 +1611,7 @@ app.post('/api/staff/follow-ups', requireSameOrigin, requireClinicalStaff, appoi
          follow_up_medicine_instructions AS "medicineInstructions",
          NULL::text AS "appointmentId", NULL::timestamptz AS "appointmentScheduledAt",
          NULL::text AS "appointmentStatus"`,
-      [randomUUID(), petId, doctorId, summary, medicineName, medicineDose, medicineInstructions],
+      [randomUUID(), petId, doctorId, summary, medicineName, medicineDose, medicineInstructions, req.user.id],
     );
     return res.status(201).json({
       followUp: {
@@ -1587,28 +1658,28 @@ app.post('/api/staff/follow-ups', requireSameOrigin, requireClinicalStaff, appoi
     await client.query(
       `INSERT INTO appointments (
          id, owner_id, pet_id, pet_name, service_id, doctor_id, scheduled_at,
-         duration_minutes, notes, status, request_source
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', 'doctor_follow_up')`,
+         duration_minutes, notes, status, request_source, updated_by
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', 'doctor_follow_up', $10)`,
       [
         appointmentId, pet.owner_id, petId, pet.name, serviceId, assignedDoctorId,
-        scheduledAt, service.durationMinutes, summary,
+        scheduledAt, service.durationMinutes, summary, req.user.id,
       ],
     );
     const recordId = randomUUID();
     const record = await client.query(
       `INSERT INTO clinical_records (
          id, pet_id, doctor_id, appointment_id, record_type, summary,
-         follow_up_at, follow_up_type
+         follow_up_at, follow_up_type, updated_by
        ) VALUES (
          $1, $2, $3, $4, 'Revisit recommendation', $5,
-         ($6::timestamptz AT TIME ZONE 'Asia/Manila')::date, 'revisit'
+         ($6::timestamptz AT TIME ZONE 'Asia/Manila')::date, 'revisit', $7
        )
        RETURNING id, pet_id AS "petId", record_type AS "recordType", summary,
          created_at AS "recordCreatedAt", follow_up_at AS "followUpAt",
          follow_up_type AS "followUpType", ''::text AS "medicineName",
          ''::text AS "medicineDose", ''::text AS "medicineInstructions",
          appointment_id AS "appointmentId"`,
-      [recordId, petId, assignedDoctorId, appointmentId, summary, scheduledAt],
+      [recordId, petId, assignedDoctorId, appointmentId, summary, scheduledAt, req.user.id],
     );
     await client.query('COMMIT');
     transactionOpen = false;
@@ -1636,12 +1707,12 @@ app.post('/api/staff/follow-ups', requireSameOrigin, requireClinicalStaff, appoi
 app.patch('/api/staff/follow-ups/:id/complete', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
   const result = await pool.query(
     `UPDATE clinical_records
-     SET follow_up_completed_at = now(), updated_at = now()
+     SET follow_up_completed_at = now(), updated_by = $4, updated_at = now()
      WHERE id = $1 AND (follow_up_type IS NOT NULL OR follow_up_at IS NOT NULL)
        AND follow_up_completed_at IS NULL
        AND ($2 = 'admin' OR doctor_id = $3)
      RETURNING id, follow_up_completed_at AS "completedAt"`,
-    [req.params.id, req.user.role, req.user.id],
+    [req.params.id, req.user.role, req.user.id, req.user.id],
   );
   if (!result.rowCount) return res.status(404).json({ error: 'That active follow-up was not found.' });
   return res.json({ followUp: result.rows[0] });
@@ -1806,10 +1877,10 @@ app.patch('/api/staff/profile', requireSameOrigin, requireClinicalStaff, asyncRo
     return res.status(400).json({ error: 'Enter a name and a valid phone number.' });
   }
   const result = await pool.query(
-    `UPDATE users SET full_name = $2, phone = $3
+    `UPDATE users SET full_name = $2, phone = $3, updated_by = $4
      WHERE id = $1 AND role IN ('doctor', 'admin')
     RETURNING id, full_name AS "fullName", email, phone, specialization`,
-    [req.user.id, fullName.trim(), phone.trim()],
+    [req.user.id, fullName.trim(), phone.trim(), req.user.id],
   );
   res.json({ profile: result.rows[0] });
 }));
@@ -1875,12 +1946,12 @@ app.put('/api/staff/availability', requireSameOrigin, requireClinicalStaff, asyn
     await client.query('BEGIN');
     for (const day of days) {
       await client.query(
-        `INSERT INTO doctor_availability (doctor_id, weekday, is_available, starts_at, ends_at)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO doctor_availability (doctor_id, weekday, is_available, starts_at, ends_at, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (doctor_id, weekday) DO UPDATE
            SET is_available = EXCLUDED.is_available, starts_at = EXCLUDED.starts_at,
-               ends_at = EXCLUDED.ends_at, updated_at = now()`,
-        [req.user.id, day.weekday, day.isAvailable, day.startsAt, day.endsAt],
+               ends_at = EXCLUDED.ends_at, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+        [req.user.id, day.weekday, day.isAvailable, day.startsAt, day.endsAt, req.user.id],
       );
     }
     await client.query('COMMIT');
@@ -1993,11 +2064,12 @@ app.patch('/api/staff/orders/:id/status', requireSameOrigin, requireClinicalStaf
     const result = await client.query(
       `UPDATE orders
        SET status = $2,
+           updated_by = $3,
            stock_reserved = CASE WHEN $2 = 'cancelled' THEN false ELSE stock_reserved END,
            updated_at = NOW()
        WHERE id = $1
        RETURNING id, status`,
-      [req.params.id, nextStatus],
+      [req.params.id, nextStatus, req.user.id],
     );
     await client.query('COMMIT');
     transactionOpen = false;
@@ -2092,11 +2164,12 @@ app.post('/api/staff/appointments/:id/decision', requireSameOrigin, requireClini
     const result = await client.query(
       `UPDATE appointments
        SET status = $2,
+           updated_by = $4,
            doctor_id = CASE WHEN $2 = 'confirmed' THEN $3 ELSE doctor_id END,
            updated_at = now()
        WHERE id = $1
        RETURNING id, status`,
-      [appointment.id, status, doctorId],
+      [appointment.id, status, doctorId, req.user.id],
     );
     await client.query('COMMIT');
     transactionOpen = false;
@@ -2118,6 +2191,48 @@ app.post('/api/staff/appointments/:id/decision', requireSameOrigin, requireClini
   } finally {
     client.release();
   }
+}));
+
+app.get('/api/admin/activity', requireAdministrator, asyncRoute(async (_req, res) => {
+  const [events, unread] = await Promise.all([
+    pool.query(
+      `SELECT id, actor_name, actor_role, event_type, title, detail,
+              entity_type, entity_id, created_at, admin_read_at AS read_at
+       FROM activity_events
+       ORDER BY created_at DESC
+       LIMIT 150`,
+    ),
+    pool.query(
+      `SELECT count(*)::integer AS count
+       FROM activity_events
+       WHERE admin_read_at IS NULL`,
+    ),
+  ]);
+  return res.json({
+    events: events.rows.map(activityEventDto),
+    unreadCount: unread.rows[0].count,
+  });
+}));
+
+app.post('/api/admin/activity/read', requireSameOrigin, requireAdministrator, asyncRoute(async (_req, res) => {
+  const result = await pool.query(
+    `UPDATE activity_events
+     SET admin_read_at = now()
+     WHERE admin_read_at IS NULL`,
+  );
+  return res.json({ markedRead: result.rowCount });
+}));
+
+app.post('/api/admin/activity/:id/read', requireSameOrigin, requireAdministrator, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `UPDATE activity_events
+     SET admin_read_at = now()
+     WHERE id = $1 AND admin_read_at IS NULL
+     RETURNING id`,
+    [req.params.id],
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'That unread activity was not found.' });
+  return res.json({ markedRead: true });
 }));
 
 app.get('/api/admin/doctor-applications', requireAdministrator, asyncRoute(async (_req, res) => {
@@ -2143,10 +2258,10 @@ app.get('/api/admin/doctor-applications', requireAdministrator, asyncRoute(async
 app.post('/api/admin/doctor-applications/:id/approve', requireSameOrigin, requireAdministrator, asyncRoute(async (req, res) => {
   const result = await pool.query(
     `UPDATE users
-     SET status = 'active'
+     SET status = 'active', updated_by = $2
      WHERE id = $1 AND role = 'doctor' AND status = 'pending'
      RETURNING id`,
-    [req.params.id],
+    [req.params.id, req.user.id],
   );
   if (!result.rowCount) return res.status(404).json({ error: 'That pending doctor application was not found.' });
   return res.json({ approved: true });
