@@ -140,6 +140,121 @@
 .confirmedNote { padding: 13px 15px; border-radius: 9px; color: #38744d; background: #eef6ec; font-size: 11px; }
 .message { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border: 1px solid #cfe4d2; border-radius: 8px; color: #2d6541; background: #eff8ef; font-size: 11px; }
 .message button { border: 0; color: inherit; background: transparent; font-size: 17px; }
+
+.layout { grid-template-columns: 264px minmax(0, 1fr); background: var(--color-off); }
+.sidebar { gap: 0; padding: 26px 20px 20px; background: var(--color-forest); }
+.brand { gap: 12px; padding: 0 0 18px; border-bottom: 0; font-size: 16px; font-weight: 800; letter-spacing: 0; }
+.brandMark { width: 46px; height: 46px; border-radius: 50%; }
+.brand small { margin-top: 2px; color: var(--color-sagemid); font-size: 11px; font-weight: 600; letter-spacing: 0; }
+.navLabel { margin: 16px 0 6px; padding: 0 14px; color: #8fb09a; font-size: 11px; letter-spacing: .08em; }
+.navigation { gap: 2px; }
+.navigation button, .signOut { min-height: 44px; padding: 0 14px; border-radius: 12px; gap: 12px; color: #cfe1d5; font-size: 14px; }
+.navigation button > img, .signOut > img { filter: brightness(0) invert(1); }
+.navigation button > span, .signOut > span { display: grid; place-items: center; width: 20px; color: inherit; font-size: 16px; }
+.navigation button:hover, .signOut:hover { background: rgba(255,255,255,.1); }
+.navigation .navActive { color: #fff; background: rgba(255,255,255,.16); font-weight: 800; }
+.navigation .navActive > span { color: #fff; }
+.navigation i { color: var(--color-forest); background: var(--color-cream); }
+.sidebarBottom { display: flex; flex-direction: column; gap: 12px; margin-top: auto; }
+.clinicStatus { margin: 0; border-color: rgba(255,255,255,.12); border-radius: 10px; }
+.clinicStatus small { line-height: 1.5; }
+.doctorCard { margin: 0; padding: 12px; border-radius: 16px; background: rgba(255,255,255,.1); }
+.avatar { width: 40px; height: 40px; color: var(--color-ink); background: linear-gradient(180deg, #e3ede2, #a9c4ae); }
+.doctorCard b { font-size: 13px; }
+.doctorCard small { color: var(--color-sagemid); }
+.signOut { padding-left: 12px; }
+.main { background: var(--color-off); }
+.topbar { min-height: 76px; padding: 0 40px; border-bottom-color: var(--color-line); }
+.topSearch { flex: 0 1 440px; width: min(440px, 100%); height: 44px; margin: 0; padding: 0 16px; border-radius: 99px; background: var(--color-off); }
+.topSearch input { font-size: 13px; }
+.topActions { gap: 12px; }
+.notification, .topProfile { height: 44px; border-color: var(--color-line); border-radius: 99px; }
+.notification { width: 44px; padding: 0; }
+.topProfile { padding: 4px 14px 4px 6px; }
+.content { max-width: 1600px; gap: 28px; padding: 32px 40px 48px; }
+.welcome { align-items: center; }
+.welcome h1 { margin: 4px 0; font-size: 32px; letter-spacing: 0; }
+.welcome .eyebrow { color: var(--color-purple); font-size: 12px; letter-spacing: .07em; }
+.welcome > div > p:last-child { color: var(--color-mute); font-size: 14px; }
+.welcomeActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.primaryButton, .secondaryButton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 18px; border-radius: 14px; font-size: 13px; }
+.primaryButton { background: var(--color-forest); }
+.secondaryButton { border-color: var(--color-line); color: var(--color-forest); }
+.metrics { gap: 16px; }
+.metricCard { align-items: center; gap: 16px; min-height: 121px; padding: 18px; border-color: var(--color-line); border-radius: 16px; box-shadow: var(--shadow-card); text-align: left; cursor: pointer; }
+.metricCard:hover, .recentPatient:hover { border-color: var(--color-sagemid); box-shadow: 0 6px 16px rgba(20,51,38,.1); }
+.metricCard > span:nth-child(2) { padding: 0; }
+.metricIcon { position: static; flex: 0 0 48px; width: 48px; height: 48px; border-radius: 50%; background: var(--color-sage); }
+.metricText { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
+.metricText > span { color: var(--color-mute); font-size: 12px; font-weight: 700; }
+.metricText > b { margin-top: 1px; color: var(--color-ink); font-size: 28px; letter-spacing: 0; line-height: 1.1; }
+.metricText > small { margin-top: 2px; color: var(--color-mute); font-size: 11px; }
+.purpleIcon { background: var(--color-lav); }
+.blueIcon { background: var(--color-sky); }
+.goldIcon { color: var(--color-warntext); background: var(--color-warnbg); }
+.dashboardGrid { grid-template-columns: minmax(0, 1.5fr) minmax(320px, .9fr); gap: 24px; }
+.dashboardPanel { overflow: hidden; padding: 0; border-color: var(--color-line); border-radius: 16px; box-shadow: var(--shadow-card); }
+.dashboardPanel .panelHeader { min-height: 65px; margin: 0; padding: 18px 24px 12px; }
+.panelHeader h2 { color: var(--color-ink); font-size: 17px; letter-spacing: 0; }
+.panelHeader p { color: var(--color-mute); font-size: 11px; }
+.dashboardPanel .table th { padding-top: 12px; padding-bottom: 12px; }
+.dashboardPanel .table td { padding-top: 13px; padding-bottom: 13px; }
+.dashboardRight { display: grid; min-width: 0; gap: 20px; }
+.dashboardRight > .panel { padding: 20px 22px; border-color: var(--color-line); border-radius: 16px; box-shadow: var(--shadow-card); }
+.dashboardRight .panelHeader { margin-bottom: 12px; }
+.dashboardRight .panelHeader h2 { font-size: 16px; }
+.requestCount { color: var(--color-warntext); background: var(--color-warnbg); }
+.request { gap: 10px; padding: 11px 0; }
+.petAvatar { border-radius: 12px; }
+.dashboardRight .secondaryButton { width: 100%; margin-top: 12px; }
+.clinicPanel .panelHeader { margin-bottom: 2px; }
+.clinicInfo { display: grid; gap: 14px; }
+.clinicInfo p { display: flex; align-items: flex-start; gap: 12px; margin: 0; color: var(--color-forest); }
+.clinicInfo p > span { display: grid; gap: 4px; }
+.clinicInfo b { color: var(--color-ink); font-size: 12px; }
+.clinicInfo small { color: var(--color-mute); font-size: 11px; line-height: 1.5; }
+.recentSection { display: grid; gap: 14px; }
+.recentHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.recentHeader h2 { margin: 0; color: var(--color-ink); font-size: 21px; }
+.recentPatients { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.recentPatient { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 14px; border: 1px solid var(--color-line); border-radius: 16px; background: #fff; box-shadow: var(--shadow-card); text-align: left; }
+.recentPatient > span:last-child { display: grid; min-width: 0; gap: 3px; }
+.recentPatient b { overflow: hidden; color: var(--color-ink); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.recentPatient small { overflow: hidden; color: var(--color-mute); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.recentAvatar { flex: 0 0 52px; width: 52px; height: 52px; border-radius: 14px; font-size: 26px; }
+
+@media (max-width: 1280px) {
+  .topbar, .content { padding-right: 28px; padding-left: 28px; }
+  .welcome { align-items: flex-start; flex-direction: column; }
+  .welcomeActions { justify-content: flex-start; }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 1120px) {
+  .dashboardGrid { grid-template-columns: minmax(0, 1fr); }
+  .dashboardRight { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; min-height: auto; }
+  .topbar { position: static; align-items: stretch; gap: 12px; padding: 14px 18px; }
+  .topSearch { flex-basis: auto; }
+  .topProfile { width: 44px; overflow: hidden; padding-right: 6px; font-size: 0; }
+  .content { padding: 22px 16px 32px; }
+  .welcome h1 { font-size: 27px; }
+  .welcomeActions { width: 100%; }
+  .welcomeActions button { flex: 1 1 145px; }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .metricCard { min-height: 108px; gap: 10px; padding: 12px; }
+  .metricIcon { flex-basis: 38px; width: 38px; height: 38px; }
+  .metricIcon img { width: 19px; height: 19px; }
+  .metricText > span { font-size: 10px; }
+  .metricText > b { font-size: 24px; }
+  .dashboardRight { grid-template-columns: 1fr; }
+  .recentHeader h2 { font-size: 18px; }
+  .recentPatients { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .recentPatient { gap: 9px; padding: 10px; }
+  .recentAvatar { flex-basis: 40px; width: 40px; height: 40px; font-size: 21px; }
+}
 @media (max-width: 1120px) {
   .layout { grid-template-columns: 218px minmax(0, 1fr); }
   .topbar { padding-right: 24px; padding-left: 24px; }

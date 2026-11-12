@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import { Icon } from '../../components/ui/Icon';
 import { decideStaffAppointment, getStaffSchedule, type Appointment as ApiAppointment } from '../auth/api';
 import { CLINIC_ADDRESS, CLINIC_HOURS, getClinicGreeting } from '../clinicInfo';
-import { StaffAppointmentQueue } from '../appointments/StaffAppointmentQueue';
 import styles from './DoctorFlow.module.css';
 
 type DoctorView = 'dashboard' | 'appointments' | 'calendar' | 'patients' | 'patient-details' | 'appointment-details';
@@ -218,6 +217,7 @@ interface DoctorFlowProps {
 export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
   const [state, dispatch] = useReducer(doctorReducer, undefined, createInitialState);
   const today = localDate(0);
+  const doctorInitials = doctorName.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
   const loadSchedule = useCallback(async () => {
     try {
       const { appointments } = await getStaffSchedule();
@@ -236,6 +236,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
 
   const pendingCount = state.appointments.filter((item) => item.status === 'Pending').length;
   const appointmentsToday = state.appointments.filter((item) => item.date === today && item.status !== 'Declined');
+  const upcomingConfirmed = state.appointments.filter((item) => item.date >= today && item.status === 'Confirmed').length;
   const selectedAppointment = state.appointments.find((item) => item.id === state.selectedAppointmentId);
   const selectedPatient = PATIENTS.find((item) => item.id === state.selectedPatientId);
   const visiblePatients = useMemo(() => {
@@ -275,44 +276,48 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
     }
   };
 
-  let title = 'Doctor Dashboard';
-  if (state.view === 'appointments') title = 'Appointments';
-  if (state.view === 'calendar') title = 'Appointment Calendar';
-  if (state.view === 'patients') title = 'Patient Directory';
-  if (state.view === 'patient-details') title = selectedPatient?.name ?? 'Patient Profile';
-  if (state.view === 'appointment-details') title = 'Appointment Details';
-
   return (
     <div className={styles.layout}>
       <aside className={styles.sidebar}>
         <div className={styles.brand}>
-          <span className={styles.brandMark}>✚</span>
-          <span>MFC <b>PET LIFE</b><small>VETERINARY CLINIC</small></span>
+          <span className={styles.brandMark}><Icon name="mfc-logo" size={29} /></span>
+          <span>MFC PET LIFE<small>Vet Doctor workspace</small></span>
         </div>
-        <div className={styles.doctorCard}>
-          <span className={styles.avatar}>AR</span>
-          <span><b>{doctorName}</b><small>Veterinarian</small></span>
-        </div>
-        <p className={styles.navLabel}>WORKSPACE</p>
+        <p className={styles.navLabel}>CLINICAL</p>
         <nav className={styles.navigation} aria-label="Doctor workspace">
-          <button type="button" className={state.view === 'dashboard' ? styles.navActive : ''} onClick={() => navigate('dashboard')}><span>▦</span>Dashboard</button>
-          <button type="button" className={state.view === 'appointments' || state.view === 'appointment-details' ? styles.navActive : ''} onClick={() => navigate('appointments')}><span>▣</span>Appointments{pendingCount > 0 && <i>{pendingCount}</i>}</button>
-          <button type="button" className={state.view === 'calendar' ? styles.navActive : ''} onClick={() => navigate('calendar')}><span>▦</span>Calendar</button>
-          <button type="button" className={state.view === 'patients' || state.view === 'patient-details' ? styles.navActive : ''} onClick={() => navigate('patients')}><span>♡</span>Patients</button>
+          <button type="button" className={state.view === 'dashboard' ? styles.navActive : ''} onClick={() => navigate('dashboard')}><Icon name="nav-home" size={20} />Dashboard</button>
+          <button type="button" className={state.view === 'calendar' ? styles.navActive : ''} onClick={() => navigate('calendar')}><Icon name="nav-calendar" size={20} />Calendar</button>
+          <button type="button" className={state.view === 'appointments' || state.view === 'appointment-details' ? styles.navActive : ''} onClick={() => navigate('appointments')}><Icon name="bell" size={20} />Requests{pendingCount > 0 && <i>{pendingCount}</i>}</button>
+          <button type="button" className={state.view === 'patients' || state.view === 'patient-details' ? styles.navActive : ''} onClick={() => navigate('patients')}><Icon name="user" size={20} />Patients</button>
+          <button type="button" className={state.view === 'patient-details' ? styles.navActive : ''} onClick={() => navigate('patients')}><Icon name="file" size={20} />Clinical records</button>
         </nav>
         <div className={styles.sidebarBottom}>
-          <div className={styles.clinicStatus}><span /> Clinic is open <small>Until 6:00 PM</small></div>
-          <button type="button" className={styles.signOut} onClick={onSignOut}><span>↪</span> Sign out</button>
+          <div className={styles.clinicStatus}><span />Clinic hours<small>{CLINIC_HOURS}</small></div>
+          <div className={styles.doctorCard}>
+            <span className={styles.avatar}>{doctorInitials}</span>
+            <span><b>{doctorName}</b><small>Veterinarian</small></span>
+          </div>
+          <button type="button" className={styles.signOut} onClick={onSignOut}><span>↪</span>Sign out</button>
         </div>
       </aside>
 
       <main className={styles.main}>
         <header className={styles.topbar}>
-          <div><span className={styles.breadcrumb}>Workspace</span><span className={styles.breadcrumbSlash}>/</span><b>{title}</b></div>
+          <label className={`${styles.searchBox} ${styles.topSearch}`}>
+            <Icon name="search" size={18} />
+            <input
+              value={state.search}
+              onFocus={() => navigate('patients')}
+              onChange={(event) => dispatch({ type: 'SET_SEARCH', value: event.target.value })}
+              placeholder="Search patient, pet or owner..."
+              aria-label="Search patients, pets, or owners"
+            />
+          </label>
           <div className={styles.topActions}>
-            <span className={styles.todayLabel}>{new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'short', day: 'numeric' })}</span>
-            <button type="button" className={styles.notification} aria-label={`Notifications, ${pendingCount} pending requests`} onClick={() => navigate('appointments')}>♧{pendingCount > 0 && <i>{pendingCount}</i>}</button>
-            <button type="button" className={styles.topProfile} onClick={() => navigate('patients')}><span className={styles.avatarSmall}>{doctorName.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span> {doctorName} <span>⌄</span></button>
+            <button type="button" className={styles.notification} aria-label={`Appointment requests, ${pendingCount} pending`} onClick={() => navigate('appointments')}>
+              <Icon name="bell" size={20} />{pendingCount > 0 && <i>{pendingCount}</i>}
+            </button>
+            <button type="button" className={styles.topProfile} onClick={() => navigate('patients')}><span className={styles.avatarSmall}>{doctorInitials}</span>{doctorName}</button>
           </div>
         </header>
 
@@ -324,44 +329,79 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
             <>
               <section className={styles.welcome}>
                 <div>
-                  <p className={styles.clinicHours}><Icon name="info-clock" size={15} />{CLINIC_HOURS}</p>
-                  <p className={styles.eyebrow}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}</p>
+                  <p className={styles.eyebrow}>VET DOCTOR WORKSPACE</p>
                   <h1>{getClinicGreeting()}, {doctorName}</h1>
-                  <p>Here’s what’s happening at your clinic today.</p>
+                  <p>{new Date(`${today}T12:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} · {appointmentsToday.length} appointments today</p>
                 </div>
-                <button type="button" className={styles.primaryButton} onClick={() => navigate('calendar')}>＋&nbsp; View schedule</button>
+                <div className={styles.welcomeActions}>
+                  <button type="button" className={styles.secondaryButton} onClick={() => navigate('patients')}><Icon name="search" size={18} />Search patient</button>
+                  <button type="button" className={styles.secondaryButton} onClick={() => navigate('patients')}><Icon name="file" size={18} />Open record</button>
+                  <button type="button" className={styles.primaryButton} onClick={() => navigate('appointments')}><Icon name="bell" size={18} />Appointment requests</button>
+                </div>
               </section>
 
               <section className={styles.metrics} aria-label="Today's overview">
-                <article className={styles.metricCard}><span className={styles.metricIcon}>▣</span><span>Appointments today</span><b>{appointmentsToday.length}</b><small>Across your schedule</small></article>
-                <article className={styles.metricCard}><span className={`${styles.metricIcon} ${styles.purpleIcon}`}>◷</span><span>Pending requests</span><b>{pendingCount}</b><button type="button" className={styles.metricLink} onClick={() => navigate('appointments')}>Review requests →</button></article>
-                <article className={styles.metricCard}><span className={`${styles.metricIcon} ${styles.blueIcon}`}>♡</span><span>My patients</span><b>{PATIENTS.length}</b><button type="button" className={styles.metricLink} onClick={() => navigate('patients')}>View directory →</button></article>
-                <article className={styles.metricCard}><span className={`${styles.metricIcon} ${styles.goldIcon}`}>✓</span><span>Completed this week</span><b>{state.appointments.filter((item) => item.status === 'Completed').length}</b><small>Great work this week</small></article>
+                <button type="button" className={styles.metricCard} onClick={() => navigate('calendar')}>
+                  <span className={styles.metricIcon}><Icon name="nav-calendar" size={23} /></span>
+                  <span className={styles.metricText}><span>Today's appointments</span><b>{appointmentsToday.length}</b><small>Across your schedule</small></span>
+                </button>
+                <button type="button" className={styles.metricCard} onClick={() => navigate('appointments')}>
+                  <span className={`${styles.metricIcon} ${styles.goldIcon}`}><Icon name="bell" size={23} /></span>
+                  <span className={styles.metricText}><span>Pending requests</span><b>{pendingCount}</b><small>Needs review</small></span>
+                </button>
+                <button type="button" className={styles.metricCard} onClick={() => navigate('patients')}>
+                  <span className={`${styles.metricIcon} ${styles.purpleIcon}`}><Icon name="user" size={23} /></span>
+                  <span className={styles.metricText}><span>Patient records</span><b>{PATIENTS.length}</b><small>In the directory</small></span>
+                </button>
+                <button type="button" className={styles.metricCard} onClick={() => navigate('appointments')}>
+                  <span className={`${styles.metricIcon} ${styles.blueIcon}`}><Icon name="pulse-card" size={23} /></span>
+                  <span className={styles.metricText}><span>Upcoming confirmed</span><b>{upcomingConfirmed}</b><small>Booked visits</small></span>
+                </button>
               </section>
 
               <section className={styles.dashboardGrid}>
-                <article className={styles.panel}>
-                  <div className={styles.panelHeader}><div><h2>Today’s appointments</h2><p>Your schedule for today</p></div><button type="button" className={styles.textButton} onClick={() => navigate('appointments')}>View all →</button></div>
+                <article className={`${styles.panel} ${styles.dashboardPanel}`}>
+                  <div className={styles.panelHeader}><div><h2>Today’s schedule</h2><p>Your appointments and visit status</p></div><button type="button" className={styles.textButton} onClick={() => navigate('calendar')}>Full calendar →</button></div>
                   {state.appointmentsLoading
                     ? <p className={styles.emptyNotice}>Loading your schedule…</p>
                     : <AppointmentTable appointments={appointmentsToday} onOpen={openAppointment} />}
                 </article>
-                <article className={styles.panel}>
-                  <div className={styles.panelHeader}><div><h2>Appointment requests</h2><p>Review and respond to new requests</p></div><span className={styles.requestCount}>{pendingCount} new</span></div>
-                  <div className={styles.requestList}>
-                    {state.appointments.filter((item) => item.status === 'Pending').map((item) => (
-                      <div className={styles.request} key={item.id}>
-                        <div className={styles.petAvatar}>{item.species === 'Dog' ? '🐕' : item.species === 'Cat' ? '🐈' : '🐇'}</div>
-                        <div className={styles.requestInfo}><b>{item.pet} <span>· {item.owner}</span></b><small>{item.service} · {dateLabel(item.date)}, {item.time}</small></div>
-                        <button type="button" className={styles.iconLink} aria-label={`Review ${item.pet} request`} onClick={() => openAppointment(item.id)}>›</button>
-                      </div>
-                    ))}
-                    {pendingCount === 0 && <p className={styles.emptyNotice}>You’re all caught up. No requests need review.</p>}
-                  </div>
-                  <button type="button" className={styles.secondaryButton} onClick={() => navigate('appointments')}>Manage appointment requests</button>
-                </article>
+                <div className={styles.dashboardRight}>
+                  <article className={styles.panel}>
+                    <div className={styles.panelHeader}><div><h2>Appointment requests</h2><p>Review new booking requests</p></div><span className={styles.requestCount}>{pendingCount} new</span></div>
+                    <div className={styles.requestList}>
+                      {state.appointments.filter((item) => item.status === 'Pending').slice(0, 4).map((item) => (
+                        <div className={styles.request} key={item.id}>
+                          <div className={styles.petAvatar}>{item.species === 'Dog' ? '🐕' : item.species === 'Cat' ? '🐈' : '🐇'}</div>
+                          <div className={styles.requestInfo}><b>{item.pet} <span>· {item.owner}</span></b><small>{item.service} · {dateLabel(item.date)}, {item.time}</small></div>
+                          <button type="button" className={styles.iconLink} aria-label={`Review ${item.pet} request`} onClick={() => openAppointment(item.id)}>›</button>
+                        </div>
+                      ))}
+                      {pendingCount === 0 && <p className={styles.emptyNotice}>No requests need review.</p>}
+                    </div>
+                    <button type="button" className={styles.secondaryButton} onClick={() => navigate('appointments')}>Manage requests</button>
+                  </article>
+                  <article className={`${styles.panel} ${styles.clinicPanel}`}>
+                    <div className={styles.panelHeader}><div><h2>Clinic information</h2><p>Today at MFC PET LIFE</p></div></div>
+                    <div className={styles.clinicInfo}>
+                      <p><Icon name="info-clock" size={18} /><span><b>Clinic hours</b><small>{CLINIC_HOURS}</small></span></p>
+                      <p><Icon name="info-pin" size={18} /><span><b>Clinic address</b><small>{CLINIC_ADDRESS}</small></span></p>
+                    </div>
+                  </article>
+                </div>
               </section>
-              <StaffAppointmentQueue role="doctor" onChanged={() => void loadSchedule()} />
+
+              <section className={styles.recentSection}>
+                <div className={styles.recentHeader}><h2>Recently accessed patient records</h2><button type="button" className={styles.textButton} onClick={() => navigate('patients')}>All patients →</button></div>
+                <div className={styles.recentPatients}>
+                  {PATIENTS.map((patient) => (
+                    <button type="button" className={styles.recentPatient} key={patient.id} onClick={() => dispatch({ type: 'OPEN_PATIENT', id: patient.id })}>
+                      <span className={`${styles.petAvatar} ${styles.recentAvatar}`}>{patient.species === 'Dog' ? '🐕' : patient.species === 'Cat' ? '🐈' : '🐇'}</span>
+                      <span><b>{patient.name}</b><small>{patient.breed}</small></span>
+                    </button>
+                  ))}
+                </div>
+              </section>
             </>
           )}
 
