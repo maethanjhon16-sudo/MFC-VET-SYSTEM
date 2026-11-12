@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import { Icon } from '../../components/ui/Icon';
 import { decideStaffAppointment, getStaffSchedule, type Appointment as ApiAppointment } from '../auth/api';
 import { CLINIC_ADDRESS, CLINIC_HOURS, getClinicGreeting } from '../clinicInfo';
+import { DoctorWorkspacePages, type DoctorAuxiliaryView } from './DoctorWorkspacePages';
 import styles from './DoctorFlow.module.css';
 
-type DoctorView = 'dashboard' | 'appointments' | 'calendar' | 'patients' | 'patient-details' | 'appointment-details';
+type DoctorView = 'dashboard' | 'appointments' | 'calendar' | 'patients' | 'patient-details' | 'appointment-details' | DoctorAuxiliaryView;
 type AppointmentStatus = 'Confirmed' | 'Pending' | 'Completed' | 'Declined';
 type Appointment = {
   id: string;
@@ -289,7 +290,18 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
           <button type="button" className={state.view === 'calendar' ? styles.navActive : ''} onClick={() => navigate('calendar')}><Icon name="nav-calendar" size={20} />Calendar</button>
           <button type="button" className={state.view === 'appointments' || state.view === 'appointment-details' ? styles.navActive : ''} onClick={() => navigate('appointments')}><Icon name="bell" size={20} />Requests{pendingCount > 0 && <i>{pendingCount}</i>}</button>
           <button type="button" className={state.view === 'patients' || state.view === 'patient-details' ? styles.navActive : ''} onClick={() => navigate('patients')}><Icon name="user" size={20} />Patients</button>
-          <button type="button" className={state.view === 'patient-details' ? styles.navActive : ''} onClick={() => navigate('patients')}><Icon name="file" size={20} />Clinical records</button>
+          <button type="button" className={state.view === 'records' ? styles.navActive : ''} onClick={() => navigate('records')}><Icon name="file" size={20} />Clinical records</button>
+          <button type="button" className={state.view === 'labs' ? styles.navActive : ''} onClick={() => navigate('labs')}><Icon name="flask" size={20} />Lab results</button>
+          <button type="button" className={state.view === 'follow-ups' ? styles.navActive : ''} onClick={() => navigate('follow-ups')}><Icon name="check-green" size={20} />Follow-ups</button>
+          <button type="button" className={state.view === 'inbox' ? styles.navActive : ''} onClick={() => navigate('inbox')}><Icon name="chat" size={20} />Inbox</button>
+          <p className={styles.navLabel}>CLINIC OPERATIONS</p>
+          <button type="button" className={state.view === 'services' ? styles.navActive : ''} onClick={() => navigate('services')}><Icon name="step-grid" size={20} />Services</button>
+          <button type="button" className={state.view === 'inventory' ? styles.navActive : ''} onClick={() => navigate('inventory')}><Icon name="nav-bag" size={20} />Inventory</button>
+          <button type="button" className={state.view === 'orders' ? styles.navActive : ''} onClick={() => navigate('orders')}><Icon name="cart" size={20} />Orders</button>
+          <p className={styles.navLabel}>ACCOUNT</p>
+          <button type="button" className={state.view === 'profile' ? styles.navActive : ''} onClick={() => navigate('profile')}><Icon name="user" size={20} />Profile</button>
+          <button type="button" className={state.view === 'availability' ? styles.navActive : ''} onClick={() => navigate('availability')}><Icon name="clock" size={20} />Availability</button>
+          <button type="button" className={state.view === 'settings' ? styles.navActive : ''} onClick={() => navigate('settings')}><Icon name="nav-menu" size={20} />Settings</button>
         </nav>
         <div className={styles.sidebarBottom}>
           <div className={styles.clinicStatus}><span />Clinic hours<small>{CLINIC_HOURS}</small></div>
@@ -472,6 +484,17 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
               {selectedAppointment.status === 'Pending' && <div className={styles.detailActions}><button type="button" className={styles.secondaryButton} disabled={state.savingAppointmentId !== null} onClick={() => void decideAppointment(selectedAppointment.id, 'decline')}>Decline request</button><button type="button" className={styles.primaryButton} disabled={state.savingAppointmentId !== null} onClick={() => void decideAppointment(selectedAppointment.id, 'confirm')}>{state.savingAppointmentId === selectedAppointment.id ? 'Saving…' : '✓  Confirm appointment'}</button></div>}
               {selectedAppointment.status === 'Confirmed' && <div className={styles.confirmedNote}>This appointment is confirmed and added to your schedule.</div>}
             </section>
+          )}
+
+          {(['records', 'labs', 'follow-ups', 'inbox', 'services', 'inventory', 'orders', 'profile', 'availability', 'settings'] as const).includes(state.view as DoctorAuxiliaryView) && (
+            <DoctorWorkspacePages
+              view={state.view as DoctorAuxiliaryView}
+              doctorName={doctorName}
+              patients={PATIENTS}
+              appointments={state.appointments}
+              onNavigate={navigate}
+              onOpenPatient={(id) => dispatch({ type: 'OPEN_PATIENT', id })}
+            />
           )}
         </div>
       </main>
