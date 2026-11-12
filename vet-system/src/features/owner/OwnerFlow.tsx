@@ -76,7 +76,12 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerName, onSignOut }
       )}
       {state.screen === 'service-details' && <ServiceDetails nav={nav} service={getService(state.serviceId)} />}
       {state.screen === 'appointment-booking' && (
-        <AppointmentBooking serviceId={state.serviceId} onCancel={nav.appointments} onBooked={nav.appointments} />
+        <AppointmentBooking
+          serviceId={state.serviceId}
+          onCancel={nav.appointments}
+          onBooked={nav.appointments}
+          onManagePets={nav.home}
+        />
       )}
       {state.screen === 'owner-appointments' && (
         <OwnerAppointments onBook={() => nav.book()} onCancel={() => nav.home()} />

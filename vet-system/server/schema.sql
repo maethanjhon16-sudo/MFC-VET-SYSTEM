@@ -29,9 +29,23 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 CREATE INDEX IF NOT EXISTS auth_sessions_expires_at_idx
   ON auth_sessions (expires_at);
 
+CREATE TABLE IF NOT EXISTS pets (
+  id text PRIMARY KEY,
+  owner_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  species text NOT NULL CHECK (species IN ('Dog', 'Cat', 'Bird', 'Rabbit', 'Other')),
+  breed text NOT NULL DEFAULT '',
+  date_of_birth date,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS pets_owner_created_idx
+  ON pets (owner_id, created_at);
+
 CREATE TABLE IF NOT EXISTS appointments (
   id text PRIMARY KEY,
   owner_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  pet_id text REFERENCES pets(id) ON DELETE SET NULL,
   pet_name text NOT NULL,
   service_id text NOT NULL,
   doctor_id text REFERENCES users(id) ON DELETE SET NULL,
@@ -45,6 +59,9 @@ CREATE TABLE IF NOT EXISTS appointments (
 
 ALTER TABLE appointments
   ADD COLUMN IF NOT EXISTS duration_minutes integer NOT NULL DEFAULT 30;
+
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS pet_id text REFERENCES pets(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS appointments_owner_schedule_idx
   ON appointments (owner_id, scheduled_at DESC);
@@ -60,3 +77,7 @@ CREATE INDEX IF NOT EXISTS appointments_pending_schedule_idx
 CREATE UNIQUE INDEX IF NOT EXISTS appointments_confirmed_doctor_slot_unique
   ON appointments (doctor_id, scheduled_at)
   WHERE doctor_id IS NOT NULL AND status = 'confirmed';
+
+CREATE INDEX IF NOT EXISTS appointments_pet_doctor_idx
+  ON appointments (pet_id, doctor_id, scheduled_at DESC)
+  WHERE pet_id IS NOT NULL AND status IN ('pending', 'confirmed');

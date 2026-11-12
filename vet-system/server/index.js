@@ -102,6 +102,17 @@ function validText(value, maxLength = 160) {
   return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= maxLength;
 }
 
+function manilaToday() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function validateSignup(body) {
   const errors = [];
   if (!validText(body.fullName, 120)) errors.push('Enter your full name.');
@@ -176,7 +187,10 @@ function appointmentDto(row) {
   const service = appointmentServices.get(row.service_id);
   return {
     id: row.id,
+    petId: row.pet_id ?? null,
     petName: row.pet_name,
+    petSpecies: row.pet_species ?? null,
+    petBreed: row.pet_breed ?? null,
     serviceId: row.service_id,
     serviceName: service?.name ?? row.service_id,
     doctorId: row.doctor_id,
@@ -365,11 +379,78 @@ app.get('/api/owner/doctors', requireOwner, asyncRoute(async (_req, res) => {
   });
 }));
 
+app.get('/api/owner/pets', requireOwner, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `SELECT id, name, species, breed, date_of_birth, created_at
+     FROM pets
+     WHERE owner_id = $1
+     ORDER BY created_at ASC`,
+    [req.user.id],
+  );
+  res.json({
+    pets: result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      species: row.species,
+      breed: row.breed,
+      dateOfBirth: row.date_of_birth,
+      createdAt: row.created_at,
+    })),
+  });
+}));
+
+app.post('/api/owner/pets', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
+  const body = req.body ?? {};
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const species = body.species;
+  const breed = typeof body.breed === 'string' ? body.breed.trim() : '';
+  const dateOfBirth = body.dateOfBirth === '' ? null : body.dateOfBirth ?? null;
+  if (!validText(name, 80)) return res.status(400).json({ error: 'Enter a pet name (up to 80 characters).' });
+  if (!['Dog', 'Cat', 'Bird', 'Rabbit', 'Other'].includes(species)) {
+    return res.status(400).json({ error: 'Choose a valid pet species.' });
+  }
+  if (typeof body.breed !== 'string' || body.breed.trim().length > 80) {
+    return res.status(400).json({ error: 'Breed must be 80 characters or fewer.' });
+  }
+  if (
+    dateOfBirth !== null
+    && (
+      typeof dateOfBirth !== 'string'
+      || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)
+      || !Number.isFinite(Date.parse(`${dateOfBirth}T00:00:00Z`))
+      || new Date(`${dateOfBirth}T00:00:00Z`).toISOString().slice(0, 10) !== dateOfBirth
+      || dateOfBirth > manilaToday()
+    )
+  ) {
+    return res.status(400).json({ error: 'Enter a valid date of birth that is not in the future.' });
+  }
+
+  const result = await pool.query(
+    `INSERT INTO pets (id, owner_id, name, species, breed, date_of_birth)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, name, species, breed, date_of_birth, created_at`,
+    [randomUUID(), req.user.id, name, species, breed, dateOfBirth],
+  );
+  const row = result.rows[0];
+  return res.status(201).json({
+    pet: {
+      id: row.id,
+      name: row.name,
+      species: row.species,
+      breed: row.breed,
+      dateOfBirth: row.date_of_birth,
+      createdAt: row.created_at,
+    },
+  });
+}));
+
 app.get('/api/owner/appointments', requireOwner, asyncRoute(async (req, res) => {
   const result = await pool.query(
-    `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at,
-            a.notes, a.status, a.created_at, d.full_name AS doctor_name
+    `SELECT a.id, a.pet_id, a.pet_name, p.species AS pet_species, p.breed AS pet_breed,
+            a.service_id, a.doctor_id, a.scheduled_at, a.notes, a.status, a.created_at,
+            d.full_name AS doctor_name
      FROM appointments a
+     LEFT JOIN pets p ON p.id = a.pet_id
      LEFT JOIN users d ON d.id = a.doctor_id
      WHERE a.owner_id = $1
      ORDER BY a.scheduled_at DESC
@@ -381,13 +462,15 @@ app.get('/api/owner/appointments', requireOwner, asyncRoute(async (req, res) => 
 
 app.post('/api/owner/appointments', requireSameOrigin, requireOwner, appointmentLimiter, asyncRoute(async (req, res) => {
   const body = req.body ?? {};
-  const petName = typeof body.petName === 'string' ? body.petName.trim() : '';
+  const petId = body.petId;
   const serviceId = body.serviceId;
   const service = appointmentServices.get(serviceId);
   const doctorId = body.doctorId === '' ? null : body.doctorId ?? null;
   const notes = body.notes === undefined ? '' : body.notes;
 
-  if (!validText(petName, 80)) return res.status(400).json({ error: 'Enter your pet’s name (up to 80 characters).' });
+  if (typeof petId !== 'string' || !/^[0-9a-f-]{36}$/i.test(petId)) {
+    return res.status(400).json({ error: 'Choose one of your saved pet profiles.' });
+  }
   if (!service) return res.status(400).json({ error: 'Choose a valid clinic service.' });
   if (doctorId !== null && (typeof doctorId !== 'string' || !/^[0-9a-f-]{36}$/i.test(doctorId))) {
     return res.status(400).json({ error: 'Choose a valid veterinarian or select any available veterinarian.' });
@@ -398,6 +481,12 @@ app.post('/api/owner/appointments', requireSameOrigin, requireOwner, appointment
   if (typeof notes !== 'string' || notes.trim().length > 500) {
     return res.status(400).json({ error: 'Visit notes must be 500 characters or fewer.' });
   }
+
+  const petResult = await pool.query(
+    'SELECT id, name FROM pets WHERE id = $1 AND owner_id = $2',
+    [petId, req.user.id],
+  );
+  if (!petResult.rowCount) return res.status(404).json({ error: 'That pet profile could not be found in your account.' });
 
   if (doctorId) {
     const doctor = await pool.query(
@@ -410,13 +499,14 @@ app.post('/api/owner/appointments', requireSameOrigin, requireOwner, appointment
 
   const result = await pool.query(
     `INSERT INTO appointments (
-       id, owner_id, pet_name, service_id, doctor_id, scheduled_at,
+       id, owner_id, pet_id, pet_name, service_id, doctor_id, scheduled_at,
        duration_minutes, notes, status
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
-     RETURNING id, pet_name, service_id, doctor_id, scheduled_at, notes, status, created_at`,
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
+     RETURNING id, pet_id, pet_name, service_id, doctor_id, scheduled_at,
+               notes, status, created_at`,
     [
-      randomUUID(), req.user.id, petName, serviceId, doctorId, body.scheduledAt,
-      service.durationMinutes, notes.trim(),
+      randomUUID(), req.user.id, petId, petResult.rows[0].name, serviceId, doctorId,
+      body.scheduledAt, service.durationMinutes, notes.trim(),
     ],
   );
   return res.status(201).json({ appointment: appointmentDto(result.rows[0]) });
@@ -438,10 +528,12 @@ app.get('/api/staff/appointments', requireClinicalStaff, asyncRoute(async (req, 
   const result = req.user.role === 'doctor'
     ? await pool.query(
       `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at,
+              a.pet_id, p.species AS pet_species, p.breed AS pet_breed,
               a.notes, a.status, a.created_at, o.full_name AS owner_name,
               o.email AS owner_email, o.phone AS owner_phone, d.full_name AS doctor_name
        FROM appointments a
        JOIN users o ON o.id = a.owner_id
+       LEFT JOIN pets p ON p.id = a.pet_id
        LEFT JOIN users d ON d.id = a.doctor_id
        WHERE a.status = 'pending' AND (a.doctor_id = $1 OR a.doctor_id IS NULL)
        ORDER BY a.scheduled_at ASC
@@ -450,10 +542,12 @@ app.get('/api/staff/appointments', requireClinicalStaff, asyncRoute(async (req, 
     )
     : await pool.query(
       `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at,
+              a.pet_id, p.species AS pet_species, p.breed AS pet_breed,
               a.notes, a.status, a.created_at, o.full_name AS owner_name,
               o.email AS owner_email, o.phone AS owner_phone, d.full_name AS doctor_name
        FROM appointments a
        JOIN users o ON o.id = a.owner_id
+       LEFT JOIN pets p ON p.id = a.pet_id
        LEFT JOIN users d ON d.id = a.doctor_id
        WHERE a.status = 'pending'
        ORDER BY a.scheduled_at ASC
@@ -478,13 +572,48 @@ app.get('/api/staff/doctors', requireClinicalStaff, asyncRoute(async (_req, res)
   });
 }));
 
+app.get('/api/staff/patients', requireClinicalStaff, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `SELECT p.id, p.name, p.species, p.breed, p.date_of_birth, p.created_at,
+            o.full_name AS owner_name, o.email AS owner_email, o.phone AS owner_phone,
+            MAX(a.scheduled_at) FILTER (
+              WHERE a.status = 'confirmed' AND a.scheduled_at <= now()
+            ) AS last_visit
+     FROM pets p
+     JOIN users o ON o.id = p.owner_id
+     JOIN appointments a ON a.pet_id = p.id AND a.status IN ('pending', 'confirmed')
+     WHERE ($1 = 'admin' OR a.doctor_id = $2)
+     GROUP BY p.id, o.id
+     ORDER BY MAX(a.scheduled_at) FILTER (
+       WHERE a.status = 'confirmed' AND a.scheduled_at <= now()
+     ) DESC NULLS LAST, p.name ASC`,
+    [req.user.role, req.user.id],
+  );
+  res.json({
+    patients: result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      species: row.species,
+      breed: row.breed,
+      dateOfBirth: row.date_of_birth,
+      createdAt: row.created_at,
+      ownerName: row.owner_name,
+      ownerEmail: row.owner_email,
+      ownerPhone: row.owner_phone,
+      lastVisit: row.last_visit,
+    })),
+  });
+}));
+
 app.get('/api/staff/schedule', requireClinicalStaff, asyncRoute(async (req, res) => {
   const result = await pool.query(
-    `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at,
+    `SELECT a.id, a.pet_id, a.pet_name, p.species AS pet_species, p.breed AS pet_breed,
+            a.service_id, a.doctor_id, a.scheduled_at,
             a.notes, a.status, a.created_at, o.full_name AS owner_name,
             o.email AS owner_email, o.phone AS owner_phone, d.full_name AS doctor_name
      FROM appointments a
      JOIN users o ON o.id = a.owner_id
+     LEFT JOIN pets p ON p.id = a.pet_id
      LEFT JOIN users d ON d.id = a.doctor_id
      WHERE a.status IN ('pending', 'confirmed')
        AND ($1 = 'admin' OR a.doctor_id = $2)

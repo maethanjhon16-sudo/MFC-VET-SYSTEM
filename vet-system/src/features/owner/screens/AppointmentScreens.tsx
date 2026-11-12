@@ -4,8 +4,10 @@ import {
   createOwnerAppointment,
   getBookingDoctors,
   getOwnerAppointments,
+  getOwnerPets,
   type Appointment,
   type BookingDoctor,
+  type OwnerPet,
 } from '../../auth/api';
 import { SERVICES, getService } from '../data';
 import type { Service } from '../types';
@@ -66,22 +68,26 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 interface BookingState {
-  petName: string;
+  petId: string;
   serviceId: string;
   doctorId: string;
   date: string;
   time: string;
   notes: string;
   doctors: BookingDoctor[];
+  pets: OwnerPet[];
   loadingDoctors: boolean;
+  loadingPets: boolean;
   submitting: boolean;
   error: string | null;
 }
 
 type BookingAction =
-  | { type: 'SET_FIELD'; field: 'petName' | 'serviceId' | 'doctorId' | 'date' | 'time' | 'notes'; value: string }
+  | { type: 'SET_FIELD'; field: 'petId' | 'serviceId' | 'doctorId' | 'date' | 'time' | 'notes'; value: string }
   | { type: 'DOCTORS_LOADED'; doctors: BookingDoctor[] }
   | { type: 'DOCTORS_FAILED'; message: string }
+  | { type: 'PETS_LOADED'; pets: OwnerPet[] }
+  | { type: 'PETS_FAILED'; message: string }
   | { type: 'SUBMITTING' }
   | { type: 'FAILED'; message: string };
 
@@ -93,6 +99,15 @@ function bookingReducer(state: BookingState, action: BookingAction): BookingStat
       return { ...state, doctors: action.doctors, loadingDoctors: false };
     case 'DOCTORS_FAILED':
       return { ...state, loadingDoctors: false, error: action.message };
+    case 'PETS_LOADED':
+      return {
+        ...state,
+        pets: action.pets,
+        petId: state.petId || action.pets[0]?.id || '',
+        loadingPets: false,
+      };
+    case 'PETS_FAILED':
+      return { ...state, loadingPets: false, error: action.message };
     case 'SUBMITTING':
       return { ...state, submitting: true, error: null };
     case 'FAILED':
@@ -106,21 +121,25 @@ export function AppointmentBooking({
   serviceId,
   onCancel,
   onBooked,
+  onManagePets,
 }: {
   serviceId: string;
   onCancel: () => void;
   onBooked: () => void;
+  onManagePets: () => void;
 }) {
   const service = getService(serviceId);
   const [state, dispatch] = useReducer(bookingReducer, {
-    petName: '',
+    petId: '',
     serviceId: service.id,
     doctorId: '',
     date: manilaDate(1),
     time: '09:00',
     notes: '',
     doctors: [],
+    pets: [],
     loadingDoctors: true,
+    loadingPets: true,
     submitting: false,
     error: null,
   });
@@ -135,21 +154,31 @@ export function AppointmentBooking({
     }
   }, []);
 
+  const loadPets = useCallback(async () => {
+    try {
+      const { pets } = await getOwnerPets();
+      dispatch({ type: 'PETS_LOADED', pets });
+    } catch (error) {
+      dispatch({ type: 'PETS_FAILED', message: errorMessage(error, 'Could not load your pet profiles.') });
+    }
+  }, []);
+
   useEffect(() => {
     void loadDoctors();
-  }, [loadDoctors]);
+    void loadPets();
+  }, [loadDoctors, loadPets]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    const petName = data.get('petName');
+    const petId = data.get('petId');
     const selectedService = data.get('serviceId');
     const selectedDoctor = data.get('doctorId');
     const date = data.get('date');
     const time = data.get('time');
     const notes = data.get('notes');
     if (
-      typeof petName !== 'string'
+      typeof petId !== 'string'
       || typeof selectedService !== 'string'
       || typeof selectedDoctor !== 'string'
       || typeof date !== 'string'
@@ -163,7 +192,7 @@ export function AppointmentBooking({
     dispatch({ type: 'SUBMITTING' });
     try {
       await createOwnerAppointment({
-        petName,
+        petId,
         serviceId: selectedService,
         doctorId: selectedDoctor || null,
         scheduledAt: new Date(`${date}T${time}:00+08:00`).toISOString(),
@@ -177,6 +206,27 @@ export function AppointmentBooking({
 
   const selectedService = getService(state.serviceId);
   const maxDate = manilaDate(90);
+
+  if (state.loadingPets) {
+    return <p className={styles.empty} aria-live="polite">Loading your pet profiles…</p>;
+  }
+
+  if (state.pets.length === 0) {
+    return (
+      <div className={styles.page}>
+        <header className={styles.heading}>
+          <div><span className={styles.eyebrow}>APPOINTMENTS</span><h1>Book an appointment</h1></div>
+          <button type="button" className={styles.secondaryButton} onClick={onCancel}>My appointments</button>
+        </header>
+        <section className={`${styles.card} ${styles.emptyCard}`}>
+          <h2>Add a pet profile first</h2>
+          <p>Appointments are linked to your pet’s saved profile so the veterinarian can see the right patient.</p>
+          <button type="button" className={styles.primaryButton} onClick={onManagePets}>Go to My Pets</button>
+          {state.error && <p className={styles.error} role="alert">{state.error}</p>}
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.page}>
@@ -194,8 +244,20 @@ export function AppointmentBooking({
           <div className={styles.sectionHeading}><span>1</span><div><h2>Visit details</h2><p>Tell us which pet needs care.</p></div></div>
           <div className={styles.fields}>
             <label className={styles.field}>
-              <span>Pet name</span>
-              <input name="petName" required maxLength={80} autoComplete="off" placeholder="e.g. Bella" />
+              <span>Pet</span>
+              <select
+                name="petId"
+                required
+                value={state.petId}
+                onChange={(event) => dispatch({ type: 'SET_FIELD', field: 'petId', value: event.target.value })}
+              >
+                {state.pets.map((pet) => (
+                  <option key={pet.id} value={pet.id}>
+                    {pet.name} · {pet.species}{pet.breed ? `, ${pet.breed}` : ''}
+                  </option>
+                ))}
+              </select>
+              <small>Need to add another pet? Add a profile from the home page.</small>
             </label>
             <label className={styles.field}>
               <span>Service</span>
