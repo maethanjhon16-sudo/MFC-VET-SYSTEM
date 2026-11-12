@@ -92,6 +92,8 @@ function mapAppointment(appointment: ApiAppointment): Appointment {
 
 interface DoctorState {
   view: DoctorView;
+  patients: Patient[];
+  addingPatient: boolean;
   appointments: Appointment[];
   search: string;
   selectedAppointmentId: string | null;
@@ -106,6 +108,8 @@ interface DoctorState {
 type DoctorAction =
   | { type: 'NAVIGATE'; view: DoctorView }
   | { type: 'SET_SEARCH'; value: string }
+  | { type: 'TOGGLE_ADD_PATIENT' }
+  | { type: 'ADD_PATIENT'; patient: Patient }
   | { type: 'OPEN_APPOINTMENT'; id: string }
   | { type: 'OPEN_PATIENT'; id: string }
   | { type: 'BACK' }
@@ -120,6 +124,8 @@ type DoctorAction =
 function createInitialState(): DoctorState {
   return {
     view: 'dashboard',
+    patients: PATIENTS,
+    addingPatient: false,
     appointments: [],
     search: '',
     selectedAppointmentId: null,
@@ -138,6 +144,15 @@ function doctorReducer(state: DoctorState, action: DoctorAction): DoctorState {
       return { ...state, view: action.view, message: '' };
     case 'SET_SEARCH':
       return { ...state, search: action.value };
+    case 'TOGGLE_ADD_PATIENT':
+      return { ...state, addingPatient: !state.addingPatient };
+    case 'ADD_PATIENT':
+      return {
+        ...state,
+        patients: [...state.patients, action.patient],
+        addingPatient: false,
+        message: `${action.patient.name} was added to the patient directory and clinical records.`,
+      };
     case 'OPEN_APPOINTMENT':
       return { ...state, view: 'appointment-details', selectedAppointmentId: action.id, message: '' };
     case 'OPEN_PATIENT':
@@ -239,13 +254,13 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
   const appointmentsToday = state.appointments.filter((item) => item.date === today && item.status !== 'Declined');
   const upcomingConfirmed = state.appointments.filter((item) => item.date >= today && item.status === 'Confirmed').length;
   const selectedAppointment = state.appointments.find((item) => item.id === state.selectedAppointmentId);
-  const selectedPatient = PATIENTS.find((item) => item.id === state.selectedPatientId);
+  const selectedPatient = state.patients.find((item) => item.id === state.selectedPatientId);
   const visiblePatients = useMemo(() => {
     const query = state.search.trim().toLowerCase();
-    return PATIENTS.filter((patient) =>
+    return state.patients.filter((patient) =>
       `${patient.name} ${patient.owner} ${patient.species} ${patient.breed}`.toLowerCase().includes(query),
     );
-  }, [state.search]);
+  }, [state.patients, state.search]);
   const weekStart = useMemo(() => {
     const date = new Date(`${today}T12:00:00Z`);
     const day = (date.getUTCDay() + 6) % 7;
@@ -363,7 +378,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
                 </button>
                 <button type="button" className={styles.metricCard} onClick={() => navigate('patients')}>
                   <span className={`${styles.metricIcon} ${styles.purpleIcon}`}><Icon name="user" size={23} /></span>
-                  <span className={styles.metricText}><span>Patient records</span><b>{PATIENTS.length}</b><small>In the directory</small></span>
+                  <span className={styles.metricText}><span>Patient records</span><b>{state.patients.length}</b><small>In the directory</small></span>
                 </button>
                 <button type="button" className={styles.metricCard} onClick={() => navigate('appointments')}>
                   <span className={`${styles.metricIcon} ${styles.blueIcon}`}><Icon name="pulse-card" size={23} /></span>
@@ -406,7 +421,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
               <section className={styles.recentSection}>
                 <div className={styles.recentHeader}><h2>Recently accessed patient records</h2><button type="button" className={styles.textButton} onClick={() => navigate('patients')}>All patients →</button></div>
                 <div className={styles.recentPatients}>
-                  {PATIENTS.map((patient) => (
+                  {state.patients.map((patient) => (
                     <button type="button" className={styles.recentPatient} key={patient.id} onClick={() => dispatch({ type: 'OPEN_PATIENT', id: patient.id })}>
                       <span className={`${styles.petAvatar} ${styles.recentAvatar}`}>{patient.species === 'Dog' ? '🐕' : patient.species === 'Cat' ? '🐈' : '🐇'}</span>
                       <span><b>{patient.name}</b><small>{patient.breed}</small></span>
@@ -447,7 +462,33 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
 
           {state.view === 'patients' && (
             <section className={styles.panel}>
-              <div className={styles.panelHeader}><div><h1>Patient directory</h1><p>Find patient profiles and review their recent visits.</p></div><span className={styles.patientTotal}>{PATIENTS.length} patients</span></div>
+              <div className={styles.panelHeader}><div><h1>Patient directory</h1><p>Find patient profiles and review their recent visits.</p></div><div className={styles.patientActions}><span className={styles.patientTotal}>{state.patients.length} patients</span><button type="button" className={styles.primaryButton} onClick={() => dispatch({ type: 'TOGGLE_ADD_PATIENT' })}>＋ Add patient</button></div></div>
+              {state.addingPatient && <form className={styles.patientForm} onSubmit={(event) => {
+                event.preventDefault();
+                const formData = new FormData(event.currentTarget);
+                const name = String(formData.get('name') ?? '').trim();
+                if (!name) return;
+                dispatch({
+                  type: 'ADD_PATIENT',
+                  patient: {
+                    id: `patient-${Date.now()}`,
+                    name,
+                    species: String(formData.get('species') ?? 'Other'),
+                    breed: String(formData.get('breed') ?? '').trim() || 'Not specified',
+                    age: String(formData.get('age') ?? '').trim() || 'Not specified',
+                    owner: String(formData.get('owner') ?? '').trim() || 'Owner not provided',
+                    lastVisit: 'No visits yet',
+                    note: 'Patient profile created. No clinical notes have been added yet.',
+                  },
+                });
+              }}>
+                <label>Name<input name="name" required autoFocus placeholder="Patient name" /></label>
+                <label>Species<select name="species" defaultValue="Dog"><option>Dog</option><option>Cat</option><option>Rabbit</option><option>Other</option></select></label>
+                <label>Breed<input name="breed" placeholder="Breed" /></label>
+                <label>Age<input name="age" placeholder="e.g. 2 years" /></label>
+                <label>Owner<input name="owner" placeholder="Owner name" /></label>
+                <div><button type="submit" className={styles.primaryButton}>Save patient</button><button type="button" className={styles.textButton} onClick={() => dispatch({ type: 'TOGGLE_ADD_PATIENT' })}>Cancel</button></div>
+              </form>}
               <label className={styles.searchBox}><span>⌕</span><input value={state.search} onChange={(event) => dispatch({ type: 'SET_SEARCH', value: event.target.value })} placeholder="Search by pet, owner, or breed" aria-label="Search patients" /></label>
               <div className={styles.tableWrap}>
                 <table className={styles.table}>
@@ -490,7 +531,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
             <DoctorWorkspacePages
               view={state.view as DoctorAuxiliaryView}
               doctorName={doctorName}
-              patients={PATIENTS}
+              patients={state.patients}
               appointments={state.appointments}
               onNavigate={navigate}
               onOpenPatient={(id) => dispatch({ type: 'OPEN_PATIENT', id })}
