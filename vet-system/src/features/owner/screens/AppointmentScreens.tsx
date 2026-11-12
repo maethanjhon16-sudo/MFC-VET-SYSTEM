@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, type FormEvent } from 'react';
 import {
   cancelOwnerAppointment,
   createOwnerAppointment,
+  decideOwnerFollowUpAppointment,
   getOwnerAvailableTimes,
   getBookingDoctors,
   getOwnerAppointments,
@@ -447,7 +448,9 @@ type AppointmentListAction =
   | { type: 'LOAD_FAILED'; message: string }
   | { type: 'CANCELLING'; id: string }
   | { type: 'CANCELLED'; id: string }
-  | { type: 'CANCEL_FAILED'; message: string };
+  | { type: 'CANCEL_FAILED'; message: string }
+  | { type: 'DECIDING'; id: string }
+  | { type: 'DECIDED'; id: string; status: 'confirmed' | 'declined' };
 
 function appointmentListReducer(state: AppointmentListState, action: AppointmentListAction): AppointmentListState {
   switch (action.type) {
@@ -466,6 +469,15 @@ function appointmentListReducer(state: AppointmentListState, action: Appointment
       };
     case 'CANCEL_FAILED':
       return { ...state, cancellingId: null, error: action.message };
+    case 'DECIDING':
+      return { ...state, cancellingId: action.id, error: null, message: null };
+    case 'DECIDED':
+      return {
+        ...state,
+        appointments: state.appointments.map((item) => item.id === action.id ? { ...item, status: action.status } : item),
+        cancellingId: null,
+        message: action.status === 'confirmed' ? 'Revisit appointment confirmed.' : 'Revisit request declined.',
+      };
     default:
       return state;
   }
@@ -521,13 +533,23 @@ export function OwnerAppointments({ onBook, onCancel }: { onBook: () => void; on
     }
   };
 
+  const decide = async (id: string, decision: 'confirm' | 'decline') => {
+    dispatch({ type: 'DECIDING', id });
+    try {
+      await decideOwnerFollowUpAppointment(id, decision);
+      dispatch({ type: 'DECIDED', id, status: decision === 'confirm' ? 'confirmed' : 'declined' });
+    } catch (error) {
+      dispatch({ type: 'CANCEL_FAILED', message: errorMessage(error, 'Could not update this revisit request.') });
+    }
+  };
+
   return (
     <div className={styles.page}>
       <header className={styles.heading}>
         <div>
           <span className={styles.eyebrow}>YOUR VISITS</span>
           <h1>My appointments</h1>
-          <p>Review appointment requests and confirmed visits.</p>
+          <p>Review visit requests. Revisit suggestions from your veterinarian can be confirmed or declined here.</p>
         </div>
         <div className={styles.headingActions}>
           <button type="button" className={styles.secondaryButton} onClick={() => void load()}>Refresh</button>
@@ -553,16 +575,23 @@ export function OwnerAppointments({ onBook, onCancel }: { onBook: () => void; on
                   <span>{appointment.doctorName ? `Dr. ${appointment.doctorName.replace(/^Dr\.?\s*/i, '')}` : 'Any available veterinarian'}</span>
                   {appointment.notes && <small>{appointment.notes}</small>}
                 </div>
-                <span className={`${styles.status} ${styles[appointment.status]}`}>{STATUS_LABEL[appointment.status]}</span>
+                <span className={`${styles.status} ${styles[appointment.status]}`}>{appointment.status === 'pending' && appointment.requestSource === 'doctor_follow_up' ? 'Awaiting your confirmation' : STATUS_LABEL[appointment.status]}</span>
                 {appointment.status === 'pending' && (
-                  <button
-                    type="button"
-                    className={styles.cancelRequest}
-                    disabled={state.cancellingId !== null}
-                    onClick={() => void cancel(appointment.id)}
-                  >
-                    {state.cancellingId === appointment.id ? 'Cancelling…' : 'Cancel request'}
-                  </button>
+                  appointment.requestSource === 'doctor_follow_up'
+                    ? <div className={styles.appointmentActions}>
+                      <button type="button" className={styles.confirmRequest} disabled={state.cancellingId !== null} onClick={() => void decide(appointment.id, 'confirm')}>
+                        {state.cancellingId === appointment.id ? 'Saving…' : 'Confirm revisit'}
+                      </button>
+                      <button type="button" className={styles.cancelRequest} disabled={state.cancellingId !== null} onClick={() => void decide(appointment.id, 'decline')}>Decline</button>
+                    </div>
+                    : <button
+                      type="button"
+                      className={styles.cancelRequest}
+                      disabled={state.cancellingId !== null}
+                      onClick={() => void cancel(appointment.id)}
+                    >
+                      {state.cancellingId === appointment.id ? 'Cancelling…' : 'Cancel request'}
+                    </button>
                 )}
               </article>
             ))}

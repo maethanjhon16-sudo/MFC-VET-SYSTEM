@@ -63,6 +63,10 @@ ALTER TABLE appointments
 ALTER TABLE appointments
   ADD COLUMN IF NOT EXISTS pet_id text REFERENCES pets(id) ON DELETE SET NULL;
 
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS request_source text NOT NULL DEFAULT 'owner'
+  CHECK (request_source IN ('owner', 'doctor_follow_up'));
+
 CREATE INDEX IF NOT EXISTS appointments_owner_schedule_idx
   ON appointments (owner_id, scheduled_at DESC);
 
@@ -99,6 +103,19 @@ CREATE TABLE IF NOT EXISTS clinical_records (
 
 ALTER TABLE clinical_records
   ADD COLUMN IF NOT EXISTS follow_up_completed_at timestamptz;
+
+ALTER TABLE clinical_records
+  ADD COLUMN IF NOT EXISTS follow_up_type text
+  CHECK (follow_up_type IN ('medicine', 'revisit'));
+
+ALTER TABLE clinical_records
+  ADD COLUMN IF NOT EXISTS follow_up_medicine_name text NOT NULL DEFAULT '';
+
+ALTER TABLE clinical_records
+  ADD COLUMN IF NOT EXISTS follow_up_medicine_dose text NOT NULL DEFAULT '';
+
+ALTER TABLE clinical_records
+  ADD COLUMN IF NOT EXISTS follow_up_medicine_instructions text NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS clinical_records_pet_created_idx
   ON clinical_records (pet_id, created_at DESC);

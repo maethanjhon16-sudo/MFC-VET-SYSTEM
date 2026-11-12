@@ -182,6 +182,12 @@ export interface OwnerMedicalRecord {
   diagnosis: string;
   treatment: string;
   followUpAt: string | null;
+  followUpType: 'medicine' | 'revisit' | null;
+  followUpMedicineName: string;
+  followUpMedicineDose: string;
+  followUpMedicineInstructions: string;
+  followUpAppointmentAt: string | null;
+  followUpAppointmentStatus: AppointmentStatus | null;
   followUpCompletedAt: string | null;
   createdAt: string;
   petName: string;
@@ -229,6 +235,7 @@ export interface Appointment {
   scheduledAt: string;
   notes: string;
   status: AppointmentStatus;
+  requestSource: 'owner' | 'doctor_follow_up';
   createdAt: string;
 }
 
@@ -277,6 +284,13 @@ export function cancelOwnerAppointment(id: string) {
   return request<{ cancelled: boolean }>(`/api/owner/appointments/${encodeURIComponent(id)}/cancel`);
 }
 
+export function decideOwnerFollowUpAppointment(id: string, decision: 'confirm' | 'decline') {
+  return request<{ appointment: { id: string; status: AppointmentStatus } }>(
+    `/api/owner/appointments/${encodeURIComponent(id)}/decision`,
+    { decision },
+  );
+}
+
 export function getStaffAppointments() {
   return request<{ appointments: Appointment[] }>('/api/staff/appointments', undefined, 'GET');
 }
@@ -289,6 +303,11 @@ export function getStaffPatients() {
   return request<{ patients: DoctorPatient[] }>('/api/staff/patients', undefined, 'GET');
 }
 
+export function getStaffAppointmentTimes(input: { date: string; serviceId: string; doctorId: string }) {
+  const query = new URLSearchParams(input);
+  return request<{ times: string[] }>(`/api/staff/appointments/availability?${query}`, undefined, 'GET');
+}
+
 export interface ClinicalRecord {
   id: string;
   petId: string;
@@ -298,6 +317,10 @@ export interface ClinicalRecord {
   diagnosis: string;
   treatment: string;
   followUpAt: string | null;
+  followUpType: 'medicine' | 'revisit' | null;
+  followUpMedicineName: string;
+  followUpMedicineDose: string;
+  followUpMedicineInstructions: string;
   followUpCompletedAt: string | null;
   createdAt: string;
   petName: string;
@@ -319,6 +342,39 @@ export function createStaffClinicalRecord(input: {
   followUpAt: string | null;
 }) {
   return request<{ record: ClinicalRecord }>('/api/staff/clinical-records', input);
+}
+
+export interface StaffFollowUp {
+  id: string;
+  petId: string;
+  recordType: string;
+  summary: string;
+  recordCreatedAt: string;
+  followUpAt: string | null;
+  followUpType: 'medicine' | 'revisit' | null;
+  medicineName: string;
+  medicineDose: string;
+  medicineInstructions: string;
+  appointmentId: string | null;
+  appointmentScheduledAt: string | null;
+  appointmentStatus: AppointmentStatus | null;
+  petName: string;
+  species: PetSpecies | null;
+  ownerName: string;
+}
+
+export function createStaffFollowUp(input: {
+  type: 'medicine' | 'revisit';
+  petId: string;
+  doctorId?: string;
+  summary: string;
+  medicineName?: string;
+  medicineDose?: string;
+  medicineInstructions?: string;
+  serviceId?: string;
+  scheduledAt?: string;
+}) {
+  return request<{ followUp: StaffFollowUp }>('/api/staff/follow-ups', input);
 }
 
 export interface LabResult {
@@ -345,18 +401,6 @@ export function createStaffLabResult(input: { petId: string; testName: string; a
 
 export function reviewStaffLabResult(id: string) {
   return request<{ labResult: Pick<LabResult, 'id' | 'status' | 'reviewedAt'> }>(`/api/staff/lab-results/${encodeURIComponent(id)}/review`);
-}
-
-export interface StaffFollowUp {
-  id: string;
-  petId: string;
-  recordType: string;
-  summary: string;
-  recordCreatedAt: string;
-  followUpAt: string;
-  petName: string;
-  species: PetSpecies;
-  ownerName: string;
 }
 
 export function getStaffFollowUps() {

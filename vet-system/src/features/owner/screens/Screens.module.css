@@ -270,6 +270,8 @@
 .recordContent h2 { color: var(--color-ink); font-size: 17px; }
 .recordContent p { color: var(--color-mute); font-size: 13px; line-height: 1.6; }
 .recordContent small { color: var(--color-mute); font-size: 12px; }
+.medicalAdvice { display: grid; gap: 5px; width: 100%; padding: 13px 15px; border: 1px solid #d5e5d7; border-radius: 9px; color: var(--color-forest); background: #f1f7f0; }
+.medicalAdvice p, .medicalAdvice small { margin: 0; color: var(--color-mute); line-height: 1.55; }
 .checkoutLayout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 390px); align-items: start; gap: 24px; }
 .cartItems { padding: 24px; }
 .sectionTitle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 16px; }

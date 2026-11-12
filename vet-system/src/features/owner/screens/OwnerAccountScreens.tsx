@@ -116,8 +116,10 @@ export function OwnerNotifications({ nav }: { nav: OwnerNav }) {
             .map((item) => ({
               id: `appointment-${item.id}`,
               date: item.createdAt,
-              title: item.status === 'confirmed' ? 'Appointment confirmed' : item.status === 'declined' ? 'Appointment request declined' : 'Appointment request received',
-              detail: `${item.petName} · ${item.serviceName}`,
+              title: item.requestSource === 'doctor_follow_up' && item.status === 'pending'
+                ? 'Veterinarian suggested a revisit'
+                : item.status === 'confirmed' ? 'Appointment confirmed' : item.status === 'declined' ? 'Appointment request declined' : 'Appointment request received',
+              detail: `${item.petName} · ${item.serviceName} · ${new Date(item.scheduledAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}`,
               target: 'appointments' as const,
             })),
           ...labResults.filter((item) => item.status === 'ready' || item.status === 'reviewed')
@@ -128,12 +130,14 @@ export function OwnerNotifications({ nav }: { nav: OwnerNav }) {
               detail: `${item.petName} · ${item.testName}`,
               target: 'records' as const,
             })),
-          ...records.filter((item) => item.followUpAt && !item.followUpCompletedAt)
+          ...records.filter((item) => (item.followUpType === 'medicine' || item.followUpAt) && !item.followUpCompletedAt)
             .map((item) => ({
               id: `follow-up-${item.id}`,
               date: item.createdAt,
-              title: 'Follow-up recommended',
-              detail: `${item.petName} · ${item.followUpAt}`,
+              title: item.followUpType === 'medicine' ? 'Medicine recommendation' : 'Revisit recommended',
+              detail: item.followUpType === 'medicine'
+                ? `${item.petName} · ${item.followUpMedicineName} · ${item.followUpMedicineDose}`
+                : `${item.petName} · ${item.followUpAppointmentAt ? new Date(item.followUpAppointmentAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }) : item.followUpAt}`,
               target: 'records' as const,
             })),
           ...conversations.filter((item) => item.unreadCount > 0)

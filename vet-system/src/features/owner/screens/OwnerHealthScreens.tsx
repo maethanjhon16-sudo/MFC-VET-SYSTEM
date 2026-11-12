@@ -352,6 +352,20 @@ export function OwnerMedicalRecords({ nav, initialPetId = '' }: { nav: OwnerNav;
               <small>Veterinarian: {entry.doctorName}</small>
               {entry.kind === 'record' && entry.record.diagnosis && <p><b>Diagnosis:</b> {entry.record.diagnosis}</p>}
               {entry.kind === 'record' && entry.record.treatment && <p><b>Treatment:</b> {entry.record.treatment}</p>}
+              {entry.kind === 'record' && entry.record.followUpType === 'medicine' && (
+                <div className={s.medicalAdvice}>
+                  <b>Medicine to buy</b>
+                  <p>{entry.record.followUpMedicineName} · {entry.record.followUpMedicineDose}</p>
+                  <small>{entry.record.followUpMedicineInstructions}</small>
+                  {entry.record.summary && <small>Care note: {entry.record.summary}</small>}
+                </div>
+              )}
+              {entry.kind === 'record' && entry.record.followUpType === 'revisit' && entry.record.followUpAppointmentAt && (
+                <small>
+                  Revisit request: {formatWhen(entry.record.followUpAppointmentAt)}
+                  {entry.record.followUpAppointmentStatus === 'pending' ? ' · awaiting your confirmation' : ''}
+                </small>
+              )}
               {entry.kind === 'record' && entry.record.followUpAt && <small>
                 Follow-up: {new Date(`${entry.record.followUpAt.slice(0, 10)}T12:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' })}
                 {entry.record.followUpCompletedAt ? ` · Completed ${formatWhen(entry.record.followUpCompletedAt)}` : ''}

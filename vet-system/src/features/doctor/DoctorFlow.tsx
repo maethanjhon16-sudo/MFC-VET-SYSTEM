@@ -30,6 +30,7 @@ type Appointment = {
   time: string;
   status: AppointmentStatus;
   reason: string;
+  requestSource: ApiAppointment['requestSource'];
 };
 type Patient = {
   id: string;
@@ -140,6 +141,7 @@ function mapAppointment(appointment: ApiAppointment): Appointment {
     }),
     status: appointment.status === 'confirmed' ? 'Confirmed' : 'Pending',
     reason: appointment.notes || 'No visit notes provided.',
+    requestSource: appointment.requestSource,
   };
 }
 
@@ -391,7 +393,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
   const appointmentsToday = state.appointments.filter((item) => item.date === today && item.status !== 'Declined');
   const pendingLabs = state.labResults.filter((item) => item.status === 'pending' || item.status === 'in_lab').slice(0, 3);
   const readyLabCount = state.labResults.filter((item) => item.status === 'ready').length;
-  const overdueFollowUpCount = state.followUps.filter((item) => item.followUpAt.slice(0, 10) < today).length;
+  const overdueFollowUpCount = state.followUps.filter((item) => item.followUpAt && item.followUpAt.slice(0, 10) < today).length;
   const clinicReminders = [
     ...(readyLabCount > 0 ? [{ key: 'labs', text: `${readyLabCount} lab result${readyLabCount === 1 ? '' : 's'} ready for review`, icon: 'flask' as const }] : []),
     ...(overdueFollowUpCount > 0 ? [{ key: 'follow-ups', text: `${overdueFollowUpCount} follow-up case${overdueFollowUpCount === 1 ? '' : 's'} overdue`, icon: 'clock' as const }] : []),
@@ -638,7 +640,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
           {state.view === 'patient-details' && selectedPatient && (
             <section className={styles.panel}>
               <button type="button" className={styles.backButton} onClick={() => navigate('patients')}>←&nbsp; Patient directory</button>
-              <div className={styles.profileHeader}><span className={`${styles.petAvatar} ${styles.largePet}`}>{petEmoji(selectedPatient.species)}</span><div><h1>{selectedPatient.name}</h1><p>{selectedPatient.breed} · {selectedPatient.age} · {selectedPatient.species}</p><span>Patient ID: MFC-{selectedPatient.id.toUpperCase()}</span></div><button type="button" className={styles.secondaryButton} onClick={() => navigate('appointments')}>Book follow-up</button></div>
+              <div className={styles.profileHeader}><span className={`${styles.petAvatar} ${styles.largePet}`}>{petEmoji(selectedPatient.species)}</span><div><h1>{selectedPatient.name}</h1><p>{selectedPatient.breed} · {selectedPatient.age} · {selectedPatient.species}</p><span>Patient ID: MFC-{selectedPatient.id.toUpperCase()}</span></div><button type="button" className={styles.secondaryButton} onClick={() => navigate('follow-ups')}>Create follow-up</button></div>
               <div className={styles.profileGrid}><article className={styles.detailCard}><h2>Owner information</h2><p><b>{selectedPatient.owner}</b><small>Pet owner</small></p><p><b>{selectedPatient.ownerEmail}</b><small>{selectedPatient.ownerPhone || 'No phone number on file'}</small></p></article><article className={styles.detailCard}><h2>Clinical records</h2>
                 {state.patientRecordsLoading && <p>Loading clinical records…</p>}
                 {state.patientRecordsError && <p role="alert">{state.patientRecordsError}</p>}
@@ -653,12 +655,13 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
           {state.view === 'appointment-details' && selectedAppointment && (
             <section className={styles.panel}>
               <button type="button" className={styles.backButton} onClick={() => navigate('appointments')}>←&nbsp; Appointments</button>
-              <div className={styles.panelHeader}><div><h1>{selectedAppointment.service}</h1><p>Appointment request · {selectedAppointment.id.toUpperCase()}</p></div><Status>{selectedAppointment.status}</Status></div>
+              <div className={styles.panelHeader}><div><h1>{selectedAppointment.service}</h1><p>{selectedAppointment.requestSource === 'doctor_follow_up' ? 'Revisit request · awaiting pet owner confirmation' : `Appointment request · ${selectedAppointment.id.toUpperCase()}`}</p></div><Status>{selectedAppointment.status}</Status></div>
               <div className={styles.detailGrid}>
                 <article className={styles.detailCard}><h2>Visit details</h2><p><b>{selectedAppointment.pet}</b><small>{selectedAppointment.species}</small></p><p><b>{dateLabel(selectedAppointment.date)} · {selectedAppointment.time}</b><small>Requested appointment time</small></p><p><b>Reason for visit</b><small>{selectedAppointment.reason}</small></p></article>
                 <article className={styles.detailCard}><h2>Pet owner</h2><p><b>{selectedAppointment.owner}</b><small>Registered pet owner</small></p><p><b>MFC PET LIFE Clinic</b><small>{CLINIC_ADDRESS}</small></p></article>
               </div>
-              {selectedAppointment.status === 'Pending' && <div className={styles.detailActions}><button type="button" className={styles.secondaryButton} disabled={state.savingAppointmentId !== null} onClick={() => void decideAppointment(selectedAppointment.id, 'decline')}>Decline request</button><button type="button" className={styles.primaryButton} disabled={state.savingAppointmentId !== null} onClick={() => void decideAppointment(selectedAppointment.id, 'confirm')}>{state.savingAppointmentId === selectedAppointment.id ? 'Saving…' : '✓  Confirm appointment'}</button></div>}
+              {selectedAppointment.status === 'Pending' && selectedAppointment.requestSource === 'doctor_follow_up' && <div className={styles.confirmedNote}>This revisit is pending the pet owner’s response.</div>}
+              {selectedAppointment.status === 'Pending' && selectedAppointment.requestSource === 'owner' && <div className={styles.detailActions}><button type="button" className={styles.secondaryButton} disabled={state.savingAppointmentId !== null} onClick={() => void decideAppointment(selectedAppointment.id, 'decline')}>Decline request</button><button type="button" className={styles.primaryButton} disabled={state.savingAppointmentId !== null} onClick={() => void decideAppointment(selectedAppointment.id, 'confirm')}>{state.savingAppointmentId === selectedAppointment.id ? 'Saving…' : '✓  Confirm appointment'}</button></div>}
               {selectedAppointment.status === 'Confirmed' && <div className={styles.confirmedNote}>This appointment is confirmed and added to your schedule.</div>}
             </section>
           )}

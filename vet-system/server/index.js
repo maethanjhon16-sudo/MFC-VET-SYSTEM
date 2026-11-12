@@ -192,7 +192,7 @@ const requireClinicalStaff = requireRoles('doctor', 'admin');
 
 async function staffPetAccess(req, petId) {
   const result = await pool.query(
-    `SELECT p.id, p.owner_id
+    `SELECT p.id, p.owner_id, p.name
      FROM pets p
      WHERE p.id = $1
        AND ($2 = 'admin' OR EXISTS (
@@ -293,6 +293,7 @@ function appointmentDto(row) {
     notes: row.notes,
     status: row.status,
     createdAt: row.created_at,
+    requestSource: row.request_source ?? 'owner',
   };
 }
 
@@ -641,11 +642,18 @@ app.get('/api/owner/medical-records', requireOwner, asyncRoute(async (req, res) 
       `SELECT r.id, r.pet_id AS "petId", r.appointment_id AS "appointmentId",
               r.record_type AS "recordType", r.summary, r.diagnosis, r.treatment,
               r.follow_up_at AS "followUpAt",
+              r.follow_up_type AS "followUpType",
+              r.follow_up_medicine_name AS "followUpMedicineName",
+              r.follow_up_medicine_dose AS "followUpMedicineDose",
+              r.follow_up_medicine_instructions AS "followUpMedicineInstructions",
+              a.scheduled_at AS "followUpAppointmentAt",
+              a.status AS "followUpAppointmentStatus",
               r.follow_up_completed_at AS "followUpCompletedAt", r.created_at AS "createdAt",
               p.name AS "petName", p.species, d.full_name AS "doctorName"
        FROM clinical_records r
        JOIN pets p ON p.id = r.pet_id
        JOIN users d ON d.id = r.doctor_id
+       LEFT JOIN appointments a ON a.id = r.appointment_id
        WHERE p.owner_id = $1
        ORDER BY r.created_at DESC
        LIMIT 300`,
@@ -716,7 +724,7 @@ app.post('/api/owner/pets', requireSameOrigin, requireOwner, asyncRoute(async (r
 app.get('/api/owner/appointments', requireOwner, asyncRoute(async (req, res) => {
   const result = await pool.query(
     `SELECT a.id, a.pet_id, a.pet_name, p.species AS pet_species, p.breed AS pet_breed,
-            a.service_id, a.doctor_id, a.scheduled_at, a.notes, a.status, a.created_at,
+            a.service_id, a.doctor_id, a.scheduled_at, a.notes, a.status, a.request_source, a.created_at,
             d.full_name AS doctor_name
      FROM appointments a
      LEFT JOIN pets p ON p.id = a.pet_id
@@ -799,6 +807,7 @@ app.post('/api/owner/appointments', requireSameOrigin, requireOwner, appointment
     const result = await client.query(
       `SELECT a.id, a.pet_id, a.pet_name, p.species AS pet_species, p.breed AS pet_breed,
               a.service_id, a.doctor_id, d.full_name AS doctor_name, a.scheduled_at,
+              a.request_source,
               a.notes, a.status, a.created_at
        FROM appointments a
        LEFT JOIN pets p ON p.id = a.pet_id
@@ -840,6 +849,76 @@ app.post('/api/owner/appointments/:id/cancel', requireSameOrigin, requireOwner, 
   );
   if (!result.rowCount) return res.status(404).json({ error: 'Only your pending appointment requests can be cancelled.' });
   return res.json({ cancelled: true });
+}));
+
+app.post('/api/owner/appointments/:id/decision', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
+  const decision = req.body?.decision;
+  if (!['confirm', 'decline'].includes(decision)) {
+    return res.status(400).json({ error: 'Choose confirm or decline for this revisit request.' });
+  }
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query('BEGIN');
+    transactionOpen = true;
+    const appointmentResult = await client.query(
+      `SELECT id, doctor_id, scheduled_at, duration_minutes
+       FROM appointments
+       WHERE id = $1 AND owner_id = $2 AND status = 'pending'
+         AND request_source = 'doctor_follow_up'
+       FOR UPDATE`,
+      [req.params.id, req.user.id],
+    );
+    const appointment = appointmentResult.rows[0];
+    if (!appointment) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(404).json({ error: 'That pending revisit request was not found.' });
+    }
+
+    if (decision === 'confirm') {
+      if (!appointment.doctor_id || !await doctorIsAvailable(
+        appointment.doctor_id,
+        appointment.scheduled_at,
+        appointment.duration_minutes,
+      )) {
+        await client.query('ROLLBACK');
+        transactionOpen = false;
+        return res.status(409).json({ error: 'The veterinarian is no longer available at that time. Contact the clinic to choose another visit time.' });
+      }
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
+        [appointment.doctor_id],
+      );
+      const conflict = await client.query(
+        `SELECT id FROM appointments
+         WHERE doctor_id = $1 AND status IN ('pending', 'confirmed') AND id <> $2
+           AND scheduled_at < $3::timestamptz + ($4::integer * interval '1 minute')
+           AND scheduled_at + (duration_minutes * interval '1 minute') > $3::timestamptz
+         LIMIT 1`,
+        [appointment.doctor_id, appointment.id, appointment.scheduled_at, appointment.duration_minutes],
+      );
+      if (conflict.rowCount) {
+        await client.query('ROLLBACK');
+        transactionOpen = false;
+        return res.status(409).json({ error: 'That visit time is no longer available. Contact the clinic to choose another time.' });
+      }
+    }
+
+    const status = decision === 'confirm' ? 'confirmed' : 'declined';
+    await client.query(
+      'UPDATE appointments SET status = $2, updated_at = now() WHERE id = $1',
+      [appointment.id, status],
+    );
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return res.json({ appointment: { id: appointment.id, status } });
+  } catch (error) {
+    if (transactionOpen) await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }));
 
 app.get('/api/owner/conversations', requireOwner, asyncRoute(async (req, res) => {
@@ -1103,7 +1182,7 @@ app.post('/api/owner/orders', requireSameOrigin, requireOwner, appointmentLimite
 app.get('/api/staff/appointments', requireClinicalStaff, asyncRoute(async (req, res) => {
   const result = req.user.role === 'doctor'
     ? await pool.query(
-      `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at,
+      `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at, a.request_source,
               a.pet_id, p.species AS pet_species, p.breed AS pet_breed,
               a.notes, a.status, a.created_at, o.full_name AS owner_name,
               o.email AS owner_email, o.phone AS owner_phone, d.full_name AS doctor_name
@@ -1111,13 +1190,14 @@ app.get('/api/staff/appointments', requireClinicalStaff, asyncRoute(async (req, 
        JOIN users o ON o.id = a.owner_id
        LEFT JOIN pets p ON p.id = a.pet_id
        LEFT JOIN users d ON d.id = a.doctor_id
-       WHERE a.status = 'pending' AND (a.doctor_id = $1 OR a.doctor_id IS NULL)
+       WHERE a.status = 'pending' AND a.request_source = 'owner'
+         AND (a.doctor_id = $1 OR a.doctor_id IS NULL)
        ORDER BY a.scheduled_at ASC
        LIMIT 100`,
       [req.user.id],
     )
     : await pool.query(
-      `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at,
+      `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at, a.request_source,
               a.pet_id, p.species AS pet_species, p.breed AS pet_breed,
               a.notes, a.status, a.created_at, o.full_name AS owner_name,
               o.email AS owner_email, o.phone AS owner_phone, d.full_name AS doctor_name
@@ -1125,7 +1205,7 @@ app.get('/api/staff/appointments', requireClinicalStaff, asyncRoute(async (req, 
        JOIN users o ON o.id = a.owner_id
        LEFT JOIN pets p ON p.id = a.pet_id
        LEFT JOIN users d ON d.id = a.doctor_id
-       WHERE a.status = 'pending'
+       WHERE a.status = 'pending' AND a.request_source = 'owner'
        ORDER BY a.scheduled_at ASC
        LIMIT 100`,
     );
@@ -1145,6 +1225,60 @@ app.get('/api/staff/doctors', requireClinicalStaff, asyncRoute(async (_req, res)
       fullName: row.full_name,
       specialization: row.specialization,
     })),
+  });
+}));
+
+app.get('/api/staff/appointments/availability', requireClinicalStaff, asyncRoute(async (req, res) => {
+  const { date, serviceId } = req.query;
+  const requestedDoctorId = req.user.role === 'doctor' ? req.user.id : req.query.doctorId;
+  const service = appointmentServices.get(serviceId);
+  if (!validDateOnly(date)) return res.status(400).json({ error: 'Choose a valid revisit date.' });
+  if (!service) return res.status(400).json({ error: 'Choose a valid clinic service.' });
+  if (typeof requestedDoctorId !== 'string' || !/^[0-9a-f-]{36}$/i.test(requestedDoctorId)) {
+    return res.status(400).json({ error: 'Choose an active veterinarian.' });
+  }
+  const serviceSetting = await pool.query(
+    'SELECT is_enabled FROM clinic_services WHERE service_id = $1',
+    [serviceId],
+  );
+  if (!serviceSetting.rows[0]?.is_enabled) {
+    return res.status(400).json({ error: 'This clinic service is currently unavailable for booking.' });
+  }
+
+  const dayStart = new Date(`${date}T00:00:00+08:00`);
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+  const weekdayName = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Manila',
+    weekday: 'short',
+  }).format(dayStart);
+  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekdayName);
+  const doctorsResult = await pool.query(
+    `SELECT u.id, COALESCE(a.weekday, $1)::smallint AS weekday,
+            COALESCE(a.is_available, $1 BETWEEN 1 AND 6) AS is_available,
+            COALESCE(a.starts_at, '08:00'::time) AS starts_at,
+            COALESCE(a.ends_at, '18:00'::time) AS ends_at
+     FROM users u
+     LEFT JOIN doctor_availability a ON a.doctor_id = u.id AND a.weekday = $1
+     WHERE u.id = $2 AND u.role = 'doctor' AND u.status = 'active'`,
+    [weekday, requestedDoctorId],
+  );
+  if (!doctorsResult.rowCount) return res.status(400).json({ error: 'Choose an active veterinarian.' });
+  const appointmentsResult = await pool.query(
+    `SELECT doctor_id, scheduled_at, duration_minutes
+     FROM appointments
+     WHERE doctor_id = $1 AND status IN ('pending', 'confirmed')
+       AND scheduled_at < $3::timestamptz
+       AND scheduled_at + (duration_minutes * interval '1 minute') > $2::timestamptz`,
+    [requestedDoctorId, dayStart, dayEnd],
+  );
+  return res.json({
+    times: availableAppointmentTimes(
+      date,
+      service.durationMinutes,
+      doctorsResult.rows,
+      appointmentsResult.rows,
+      requestedDoctorId,
+    ),
   });
 }));
 
@@ -1185,7 +1319,10 @@ app.get('/api/staff/clinical-records', requireClinicalStaff, asyncRoute(async (r
   const result = await pool.query(
         `SELECT r.id, r.pet_id AS "petId", r.appointment_id AS "appointmentId",
           r.record_type AS "recordType", r.summary, r.diagnosis, r.treatment,
-          r.follow_up_at AS "followUpAt",
+          r.follow_up_at AS "followUpAt", r.follow_up_type AS "followUpType",
+          r.follow_up_medicine_name AS "followUpMedicineName",
+          r.follow_up_medicine_dose AS "followUpMedicineDose",
+          r.follow_up_medicine_instructions AS "followUpMedicineInstructions",
           r.follow_up_completed_at AS "followUpCompletedAt", r.created_at AS "createdAt",
           p.name AS "petName", p.species, o.full_name AS "ownerName",
           d.full_name AS "doctorName"
@@ -1237,7 +1374,10 @@ app.post('/api/staff/clinical-records', requireSameOrigin, requireClinicalStaff,
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id, pet_id AS "petId", appointment_id AS "appointmentId",
        record_type AS "recordType", summary, diagnosis, treatment,
-       follow_up_at AS "followUpAt",
+     follow_up_at AS "followUpAt", follow_up_type AS "followUpType",
+     follow_up_medicine_name AS "followUpMedicineName",
+     follow_up_medicine_dose AS "followUpMedicineDose",
+     follow_up_medicine_instructions AS "followUpMedicineInstructions",
        follow_up_completed_at AS "followUpCompletedAt", created_at AS "createdAt"`,
     [randomUUID(), petId, doctorId, recordType, summary, diagnosis, treatment, followUpAt],
   );
@@ -1328,24 +1468,177 @@ app.get('/api/staff/follow-ups', requireClinicalStaff, asyncRoute(async (req, re
   const result = await pool.query(
         `SELECT r.id, r.pet_id AS "petId", r.record_type AS "recordType",
           r.summary, r.created_at AS "recordCreatedAt", r.follow_up_at AS "followUpAt",
+          COALESCE(r.follow_up_type, CASE WHEN r.follow_up_at IS NOT NULL THEN 'revisit' END) AS "followUpType",
+          r.follow_up_medicine_name AS "medicineName",
+          r.follow_up_medicine_dose AS "medicineDose",
+          r.follow_up_medicine_instructions AS "medicineInstructions",
+          a.id AS "appointmentId", a.scheduled_at AS "appointmentScheduledAt",
+          a.status AS "appointmentStatus",
           p.name AS "petName", p.species, o.full_name AS "ownerName"
      FROM clinical_records r
      JOIN pets p ON p.id = r.pet_id
      JOIN users o ON o.id = p.owner_id
-     WHERE r.follow_up_at IS NOT NULL AND r.follow_up_completed_at IS NULL
+     LEFT JOIN appointments a ON a.id = r.appointment_id
+     WHERE (r.follow_up_type IS NOT NULL OR r.follow_up_at IS NOT NULL)
+       AND r.follow_up_completed_at IS NULL
        AND ($1 = 'admin' OR r.doctor_id = $2)
-     ORDER BY r.follow_up_at ASC
+     ORDER BY r.follow_up_at ASC NULLS LAST, r.created_at DESC
      LIMIT 500`,
     [req.user.role, req.user.id],
   );
   res.json({ followUps: result.rows });
 }));
 
+app.post('/api/staff/follow-ups', requireSameOrigin, requireClinicalStaff, appointmentLimiter, asyncRoute(async (req, res) => {
+  const body = req.body ?? {};
+  const type = body.type;
+  const petId = body.petId;
+  const summary = typeof body.summary === 'string' ? body.summary.trim() : '';
+  if (!['medicine', 'revisit'].includes(type)) {
+    return res.status(400).json({ error: 'Choose a medication recommendation or revisit appointment.' });
+  }
+  if (typeof petId !== 'string' || !/^[0-9a-f-]{36}$/i.test(petId)) {
+    return res.status(400).json({ error: 'Choose a patient profile.' });
+  }
+  const maxSummary = type === 'revisit' ? 500 : 2000;
+  if (!validText(summary, maxSummary)) {
+    return res.status(400).json({ error: 'Enter a clear follow-up note.' });
+  }
+  const pet = await staffPetAccess(req, petId);
+  if (!pet) return res.status(404).json({ error: 'That patient is not linked to your clinic schedule.' });
+
+  const doctorId = req.user.role === 'doctor' ? req.user.id : body.doctorId;
+  if (typeof doctorId !== 'string' || !/^[0-9a-f-]{36}$/i.test(doctorId)) {
+    return res.status(400).json({ error: 'Choose the veterinarian responsible for this follow-up.' });
+  }
+  const doctor = await pool.query(
+    "SELECT id FROM users WHERE id = $1 AND role = 'doctor' AND status = 'active'",
+    [doctorId],
+  );
+  if (!doctor.rowCount) return res.status(400).json({ error: 'Choose an active veterinarian.' });
+
+  if (type === 'medicine') {
+    const medicineName = typeof body.medicineName === 'string' ? body.medicineName.trim() : '';
+    const medicineDose = typeof body.medicineDose === 'string' ? body.medicineDose.trim() : '';
+    const medicineInstructions = typeof body.medicineInstructions === 'string' ? body.medicineInstructions.trim() : '';
+    if (
+      !validText(medicineName, 200)
+      || !validText(medicineDose, 200)
+      || !validText(medicineInstructions, 2000)
+    ) {
+      return res.status(400).json({ error: 'Enter the medicine name, dose, and instructions.' });
+    }
+    const record = await pool.query(
+      `INSERT INTO clinical_records (
+         id, pet_id, doctor_id, record_type, summary, follow_up_type,
+         follow_up_medicine_name, follow_up_medicine_dose, follow_up_medicine_instructions
+       ) VALUES ($1, $2, $3, 'Medication recommendation', $4, 'medicine', $5, $6, $7)
+       RETURNING id, pet_id AS "petId", record_type AS "recordType", summary,
+         created_at AS "recordCreatedAt", follow_up_at AS "followUpAt",
+         follow_up_type AS "followUpType", follow_up_medicine_name AS "medicineName",
+         follow_up_medicine_dose AS "medicineDose",
+         follow_up_medicine_instructions AS "medicineInstructions",
+         NULL::text AS "appointmentId", NULL::timestamptz AS "appointmentScheduledAt",
+         NULL::text AS "appointmentStatus"`,
+      [randomUUID(), petId, doctorId, summary, medicineName, medicineDose, medicineInstructions],
+    );
+    return res.status(201).json({
+      followUp: {
+        ...record.rows[0],
+        species: null,
+        petName: pet.name,
+        ownerName: '',
+      },
+    });
+  }
+
+  const serviceId = body.serviceId;
+  const service = appointmentServices.get(serviceId);
+  const scheduledAt = body.scheduledAt;
+  if (!service) return res.status(400).json({ error: 'Choose a valid clinic service.' });
+  if (!isValidAppointmentTime(scheduledAt, service.durationMinutes)) {
+    return res.status(400).json({ error: 'Choose a future half-hour time within the next 90 days.' });
+  }
+  const serviceAvailability = await pool.query(
+    'SELECT is_enabled FROM clinic_services WHERE service_id = $1',
+    [serviceId],
+  );
+  if (!serviceAvailability.rows[0]?.is_enabled) {
+    return res.status(400).json({ error: 'This clinic service is currently unavailable for booking.' });
+  }
+
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query('BEGIN');
+    transactionOpen = true;
+    const assignedDoctorId = await findBookableDoctor(
+      client,
+      scheduledAt,
+      service.durationMinutes,
+      doctorId,
+    );
+    if (!assignedDoctorId) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({ error: 'That veterinarian is unavailable or already has an overlapping appointment at the selected time.' });
+    }
+    const appointmentId = randomUUID();
+    await client.query(
+      `INSERT INTO appointments (
+         id, owner_id, pet_id, pet_name, service_id, doctor_id, scheduled_at,
+         duration_minutes, notes, status, request_source
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', 'doctor_follow_up')`,
+      [
+        appointmentId, pet.owner_id, petId, pet.name, serviceId, assignedDoctorId,
+        scheduledAt, service.durationMinutes, summary,
+      ],
+    );
+    const recordId = randomUUID();
+    const record = await client.query(
+      `INSERT INTO clinical_records (
+         id, pet_id, doctor_id, appointment_id, record_type, summary,
+         follow_up_at, follow_up_type
+       ) VALUES (
+         $1, $2, $3, $4, 'Revisit recommendation', $5,
+         ($6::timestamptz AT TIME ZONE 'Asia/Manila')::date, 'revisit'
+       )
+       RETURNING id, pet_id AS "petId", record_type AS "recordType", summary,
+         created_at AS "recordCreatedAt", follow_up_at AS "followUpAt",
+         follow_up_type AS "followUpType", ''::text AS "medicineName",
+         ''::text AS "medicineDose", ''::text AS "medicineInstructions",
+         appointment_id AS "appointmentId"`,
+      [recordId, petId, assignedDoctorId, appointmentId, summary, scheduledAt],
+    );
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return res.status(201).json({
+      followUp: {
+        ...record.rows[0],
+        appointmentScheduledAt: scheduledAt,
+        appointmentStatus: 'pending',
+        species: null,
+        petName: pet.name,
+        ownerName: '',
+      },
+    });
+  } catch (error) {
+    if (transactionOpen) await client.query('ROLLBACK');
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'That time was just booked. Refresh the schedule and choose another slot.' });
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}));
+
 app.patch('/api/staff/follow-ups/:id/complete', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
   const result = await pool.query(
     `UPDATE clinical_records
      SET follow_up_completed_at = now(), updated_at = now()
-     WHERE id = $1 AND follow_up_at IS NOT NULL AND follow_up_completed_at IS NULL
+     WHERE id = $1 AND (follow_up_type IS NOT NULL OR follow_up_at IS NOT NULL)
+       AND follow_up_completed_at IS NULL
        AND ($2 = 'admin' OR doctor_id = $3)
      RETURNING id, follow_up_completed_at AS "completedAt"`,
     [req.params.id, req.user.role, req.user.id],
@@ -1720,7 +2013,7 @@ app.patch('/api/staff/orders/:id/status', requireSameOrigin, requireClinicalStaf
 app.get('/api/staff/schedule', requireClinicalStaff, asyncRoute(async (req, res) => {
   const result = await pool.query(
     `SELECT a.id, a.pet_id, a.pet_name, p.species AS pet_species, p.breed AS pet_breed,
-            a.service_id, a.doctor_id, a.scheduled_at,
+            a.service_id, a.doctor_id, a.scheduled_at, a.request_source,
             a.notes, a.status, a.created_at, o.full_name AS owner_name,
             o.email AS owner_email, o.phone AS owner_phone, d.full_name AS doctor_name
      FROM appointments a
@@ -1762,7 +2055,7 @@ app.post('/api/staff/appointments/:id/decision', requireSameOrigin, requireClini
     const appointmentResult = await client.query(
       `SELECT id, doctor_id, scheduled_at, duration_minutes
        FROM appointments
-       WHERE id = $1 AND status = 'pending'
+       WHERE id = $1 AND status = 'pending' AND request_source = 'owner'
          AND ($2 = 'admin' OR doctor_id IS NULL OR doctor_id = $3)
        FOR UPDATE`,
       [req.params.id, req.user.role, req.user.id],
