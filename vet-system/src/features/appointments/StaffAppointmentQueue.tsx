@@ -146,7 +146,7 @@ export function StaffAppointmentQueue({
                     <p>{localDate(appointment.scheduledAt)}</p>
                     <span>Owner: {appointment.ownerName} · {appointment.ownerPhone}</span>
                     {appointment.notes && <small>Visit note: {appointment.notes}</small>}
-                    {appointment.doctorName && <small>Requested doctor: {appointment.doctorName}</small>}
+                    {appointment.doctorName && <small>Assigned veterinarian: {appointment.doctorName}</small>}
                     {isAdmin && (
                       <label className={styles.assign}>
                         Assign veterinarian

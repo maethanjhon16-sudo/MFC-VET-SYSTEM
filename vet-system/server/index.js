@@ -226,26 +226,42 @@ async function doctorIsAvailable(doctorId, scheduledAt, durationMinutes) {
   return isWithinDoctorAvailability(date.toISOString(), durationMinutes, availability);
 }
 
-async function anyDoctorIsAvailable(scheduledAt, durationMinutes) {
+async function findBookableDoctor(client, scheduledAt, durationMinutes, preferredDoctorId) {
   const date = new Date(scheduledAt);
   const weekdayName = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Manila',
     weekday: 'short',
   }).format(date);
   const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekdayName);
-  const result = await pool.query(
-    `SELECT COALESCE(a.weekday, $1)::smallint AS weekday,
+  const result = await client.query(
+    `SELECT u.id, COALESCE(a.weekday, $1)::smallint AS weekday,
             COALESCE(a.is_available, $1 BETWEEN 1 AND 6) AS is_available,
             COALESCE(a.starts_at, '08:00'::time) AS starts_at,
             COALESCE(a.ends_at, '18:00'::time) AS ends_at
      FROM users u
      LEFT JOIN doctor_availability a ON a.doctor_id = u.id AND a.weekday = $1
-     WHERE u.role = 'doctor' AND u.status = 'active'`,
-    [weekday],
+     WHERE u.role = 'doctor' AND u.status = 'active'
+       AND ($2::text IS NULL OR u.id = $2)
+     ORDER BY u.full_name, u.id`,
+    [weekday, preferredDoctorId],
   );
-  return result.rows.some((availability) =>
-    isWithinDoctorAvailability(date.toISOString(), durationMinutes, availability),
-  );
+
+  for (const candidate of result.rows) {
+    if (!isWithinDoctorAvailability(date.toISOString(), durationMinutes, candidate)) continue;
+
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [candidate.id]);
+    const conflict = await client.query(
+      `SELECT id FROM appointments
+       WHERE doctor_id = $1 AND status IN ('pending', 'confirmed')
+         AND scheduled_at < $2::timestamptz + ($3::integer * interval '1 minute')
+         AND scheduled_at + (duration_minutes * interval '1 minute') > $2::timestamptz
+       LIMIT 1`,
+      [candidate.id, date.toISOString(), durationMinutes],
+    );
+    if (!conflict.rowCount) return candidate.id;
+  }
+
+  return null;
 }
 
 function appointmentDto(row) {
@@ -570,33 +586,70 @@ app.post('/api/owner/appointments', requireSameOrigin, requireOwner, appointment
   );
   if (!petResult.rowCount) return res.status(404).json({ error: 'That pet profile could not be found in your account.' });
 
-  if (doctorId) {
-    const doctor = await pool.query(
-      `SELECT id FROM users
-       WHERE id = $1 AND role = 'doctor' AND status = 'active'`,
-      [doctorId],
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query('BEGIN');
+    transactionOpen = true;
+    const assignedDoctorId = await findBookableDoctor(
+      client,
+      body.scheduledAt,
+      service.durationMinutes,
+      doctorId,
     );
-    if (!doctor.rowCount) return res.status(400).json({ error: 'That veterinarian is not available for booking.' });
-    if (!await doctorIsAvailable(doctorId, body.scheduledAt, service.durationMinutes)) {
-      return res.status(400).json({ error: 'That veterinarian is unavailable at the selected date and time.' });
+    if (!assignedDoctorId) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: doctorId
+          ? 'That veterinarian is unavailable or already has an overlapping appointment at the selected time.'
+          : 'No veterinarian is free at the selected time. Choose another time or veterinarian.',
+      });
     }
-  } else if (!await anyDoctorIsAvailable(body.scheduledAt, service.durationMinutes)) {
-    return res.status(400).json({ error: 'No active veterinarian is available at the selected date and time.' });
-  }
 
-  const result = await pool.query(
-    `INSERT INTO appointments (
-       id, owner_id, pet_id, pet_name, service_id, doctor_id, scheduled_at,
-       duration_minutes, notes, status
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
-     RETURNING id, pet_id, pet_name, service_id, doctor_id, scheduled_at,
-               notes, status, created_at`,
-    [
-      randomUUID(), req.user.id, petId, petResult.rows[0].name, serviceId, doctorId,
-      body.scheduledAt, service.durationMinutes, notes.trim(),
-    ],
-  );
-  return res.status(201).json({ appointment: appointmentDto(result.rows[0]) });
+    const appointmentId = randomUUID();
+    await client.query(
+      `INSERT INTO appointments (
+         id, owner_id, pet_id, pet_name, service_id, doctor_id, scheduled_at,
+         duration_minutes, notes, status
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')`,
+      [
+        appointmentId, req.user.id, petId, petResult.rows[0].name, serviceId, assignedDoctorId,
+        body.scheduledAt, service.durationMinutes, notes.trim(),
+      ],
+    );
+    const result = await client.query(
+      `SELECT a.id, a.pet_id, a.pet_name, p.species AS pet_species, p.breed AS pet_breed,
+              a.service_id, a.doctor_id, d.full_name AS doctor_name, a.scheduled_at,
+              a.notes, a.status, a.created_at
+       FROM appointments a
+       LEFT JOIN pets p ON p.id = a.pet_id
+       LEFT JOIN users d ON d.id = a.doctor_id
+       WHERE a.id = $1`,
+      [appointmentId],
+    );
+    if (!result.rows[0]) throw new Error('The saved appointment could not be loaded.');
+
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return res.status(201).json({ appointment: appointmentDto(result.rows[0]) });
+  } catch (error) {
+    if (transactionOpen) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Appointment booking rollback failed.', {
+          code: rollbackError.code ?? 'ROLLBACK_FAILED',
+        });
+      }
+    }
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'That time was just booked. Refresh the schedule and choose another slot.' });
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 }));
 
 app.post('/api/owner/appointments/:id/cancel', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
@@ -1178,7 +1231,7 @@ app.post('/api/staff/appointments/:id/decision', requireSameOrigin, requireClini
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [doctorId]);
       const conflict = await client.query(
         `SELECT id FROM appointments
-         WHERE doctor_id = $1 AND status = 'confirmed' AND id <> $2
+         WHERE doctor_id = $1 AND status IN ('pending', 'confirmed') AND id <> $2
            AND scheduled_at < $3::timestamptz + ($4::integer * interval '1 minute')
            AND scheduled_at + (duration_minutes * interval '1 minute') > $3::timestamptz
          LIMIT 1`,
