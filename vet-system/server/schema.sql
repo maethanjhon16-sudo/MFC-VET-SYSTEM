@@ -341,12 +341,12 @@ BEGIN
         WHEN 'doctor_account_approved' THEN 'Veterinarian account approved'
         ELSE 'Account status updated'
       END;
-      detail_value := new_row ->> 'full_name' || ' · ' || new_row ->> 'status';
+      detail_value := (new_row ->> 'full_name') || ' · ' || (new_row ->> 'status');
       entity_type_value := 'account';
     ELSE
       event_type_value := (new_row ->> 'role') || '_profile_updated';
       title_value := CASE WHEN new_row ->> 'role' = 'doctor' THEN 'Veterinarian profile updated' ELSE 'Pet owner profile updated' END;
-      detail_value := new_row ->> 'full_name' || ' updated their profile.';
+      detail_value := (new_row ->> 'full_name') || ' updated their profile.';
       entity_type_value := 'profile';
     END IF;
   ELSIF TG_TABLE_NAME = 'pets' THEN
@@ -360,7 +360,7 @@ BEGIN
     actor_id_value := new_row ->> 'owner_id';
     event_type_value := CASE WHEN TG_OP = 'INSERT' THEN 'pet_profile_created' ELSE 'pet_profile_updated' END;
     title_value := CASE WHEN TG_OP = 'INSERT' THEN 'Pet profile added' ELSE 'Pet profile updated' END;
-    detail_value := new_row ->> 'name' || CASE WHEN TG_OP = 'INSERT' THEN ' was added.' ELSE '’s profile was updated.' END;
+    detail_value := (new_row ->> 'name') || CASE WHEN TG_OP = 'INSERT' THEN ' was added.' ELSE '’s profile was updated.' END;
   ELSIF TG_TABLE_NAME = 'appointments' THEN
     IF TG_OP = 'UPDATE'
        AND (old_row ->> 'status') IS NOT DISTINCT FROM (new_row ->> 'status')
@@ -391,7 +391,7 @@ BEGIN
       WHEN 'appointment_declined' THEN 'Appointment request declined'
       ELSE 'Appointment request cancelled'
     END;
-    detail_value := new_row ->> 'pet_name' || ' · ' || new_row ->> 'service_id';
+    detail_value := (new_row ->> 'pet_name') || ' · ' || (new_row ->> 'service_id');
     IF (TG_OP = 'INSERT' AND new_row ->> 'request_source' = 'doctor_follow_up')
        OR (TG_OP = 'UPDATE' AND new_row ->> 'request_source' = 'owner') THEN
       owner_id_value := new_row ->> 'owner_id';
@@ -425,8 +425,8 @@ BEGIN
       ELSE 'Medical record updated'
     END;
     detail_value := COALESCE(pet_name_value, 'Pet') || CASE
-      WHEN event_type_value = 'medicine_recommended' THEN ' · ' || new_row ->> 'follow_up_medicine_name' || ' · ' || new_row ->> 'follow_up_medicine_dose'
-      ELSE ' · ' || new_row ->> 'record_type'
+      WHEN event_type_value = 'medicine_recommended' THEN ' · ' || (new_row ->> 'follow_up_medicine_name') || ' · ' || (new_row ->> 'follow_up_medicine_dose')
+      ELSE ' · ' || (new_row ->> 'record_type')
     END;
     owner_id_value := owner_id_value;
   ELSIF TG_TABLE_NAME = 'lab_results' THEN
@@ -439,7 +439,7 @@ BEGIN
     SELECT owner_id, name INTO owner_id_value, pet_name_value FROM pets WHERE id = new_row ->> 'pet_id';
     event_type_value := CASE WHEN new_row ->> 'status' IN ('ready', 'reviewed') THEN 'lab_result_ready' ELSE 'lab_result_updated' END;
     title_value := CASE WHEN new_row ->> 'status' IN ('ready', 'reviewed') THEN 'Lab result available' ELSE 'Lab test updated' END;
-    detail_value := COALESCE(pet_name_value, 'Pet') || ' · ' || new_row ->> 'test_name';
+    detail_value := COALESCE(pet_name_value, 'Pet') || ' · ' || (new_row ->> 'test_name');
   ELSIF TG_TABLE_NAME = 'doctor_messages' THEN
     actor_id_value := new_row ->> 'sender_id';
     SELECT owner_id, pet_id INTO conversation_owner_id, pet_name_value
@@ -455,7 +455,7 @@ BEGIN
     actor_id_value := COALESCE(new_row ->> 'updated_by', new_row ->> 'owner_id');
     event_type_value := CASE WHEN TG_OP = 'INSERT' THEN 'order_placed' ELSE 'order_updated' END;
     title_value := CASE WHEN TG_OP = 'INSERT' THEN 'Shop order placed' ELSE 'Shop order updated' END;
-    detail_value := CASE WHEN TG_OP = 'INSERT' THEN 'A pet owner submitted a product order.' ELSE 'Order status changed to ' || new_row ->> 'status' || '.' END;
+    detail_value := CASE WHEN TG_OP = 'INSERT' THEN 'A pet owner submitted a product order.' ELSE 'Order status changed to ' || (new_row ->> 'status') || '.' END;
     owner_id_value := new_row ->> 'owner_id';
   ELSIF TG_TABLE_NAME = 'inventory_stock' THEN
     IF new_row ->> 'updated_by' IS NULL THEN
@@ -467,7 +467,7 @@ BEGIN
     actor_id_value := new_row ->> 'updated_by';
     event_type_value := 'inventory_updated';
     title_value := 'Product inventory updated';
-    detail_value := new_row ->> 'product_id' || ' stock: ' || new_row ->> 'quantity';
+    detail_value := (new_row ->> 'product_id') || ' stock: ' || (new_row ->> 'quantity');
   ELSIF TG_TABLE_NAME = 'clinic_services' THEN
     IF TG_OP = 'UPDATE' AND (old_row ->> 'is_enabled') IS NOT DISTINCT FROM (new_row ->> 'is_enabled') THEN
       RETURN NEW;
@@ -475,7 +475,7 @@ BEGIN
     actor_id_value := new_row ->> 'updated_by';
     event_type_value := 'service_updated';
     title_value := 'Clinic service updated';
-    detail_value := new_row ->> 'service_id' || CASE WHEN (new_row ->> 'is_enabled')::boolean THEN ' enabled.' ELSE ' disabled.' END;
+    detail_value := (new_row ->> 'service_id') || CASE WHEN (new_row ->> 'is_enabled')::boolean THEN ' enabled.' ELSE ' disabled.' END;
   ELSIF TG_TABLE_NAME = 'doctor_availability' THEN
     IF TG_OP = 'UPDATE'
        AND (old_row ->> 'is_available') IS NOT DISTINCT FROM (new_row ->> 'is_available')
