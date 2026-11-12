@@ -45,6 +45,7 @@ function availableTimes(
   duration: number,
   doctors: BookingDoctor[],
   selectedDoctorId: string,
+  includePast = false,
 ): string[] {
   const day = new Date(`${date}T12:00:00Z`).getUTCDay();
   const relevantDoctors = selectedDoctorId
@@ -63,7 +64,7 @@ function availableTimes(
     });
     if (!fitsSchedule) continue;
     const time = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-    if (new Date(`${date}T${time}:00+08:00`).getTime() > Date.now()) times.push(time);
+    if (includePast || new Date(`${date}T${time}:00+08:00`).getTime() > Date.now()) times.push(time);
   }
   return times;
 }
@@ -75,6 +76,14 @@ function displayDate(value: string): string {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function displayTime(value: string): string {
+  return new Date(`2000-01-01T${value.slice(0, 5)}:00+08:00`).toLocaleTimeString('en-PH', {
+    timeZone: 'Asia/Manila',
     hour: 'numeric',
     minute: '2-digit',
   });
@@ -166,6 +175,16 @@ export function AppointmentBooking({
     state.doctors,
     state.doctorId,
   );
+  const scheduledSlots = slots.length > 0 ? slots : availableTimes(
+    state.date,
+    serviceMinutes(getService(state.serviceId)),
+    state.doctors,
+    state.doctorId,
+    true,
+  );
+  const selectedWeekday = new Date(`${state.date}T12:00:00Z`).getUTCDay();
+  const selectedDoctor = state.doctors.find((doctor) => doctor.id === state.doctorId);
+  const selectedDoctorDay = selectedDoctor?.availability.find((item) => item.weekday === selectedWeekday);
 
   const loadDoctors = useCallback(async () => {
     try {
@@ -322,6 +341,13 @@ export function AppointmentBooking({
                 ))}
               </select>
               <small>Only approved, active clinic doctors are listed.</small>
+              {selectedDoctor && (
+                <small>
+                  {selectedDoctorDay?.isAvailable
+                    ? `${selectedDoctor.fullName} is scheduled ${displayTime(selectedDoctorDay.startsAt)}–${displayTime(selectedDoctorDay.endsAt)} on this date.`
+                    : `${selectedDoctor.fullName} is not scheduled on this date.`}
+                </small>
+              )}
             </label>
             <div className={styles.fieldRow}>
               <label className={styles.field}>
@@ -369,8 +395,13 @@ export function AppointmentBooking({
                   ))}
                 </select>
                 {slots.length === 0 && (
-                  <small>No veterinarian is scheduled for this date and service duration. Refreshing schedules automatically.</small>
+                  <small>
+                    {scheduledSlots.length === 0
+                      ? 'No veterinarian is scheduled for this date and service duration.'
+                      : 'No future appointment times remain on this date. Choose another date.'}
+                  </small>
                 )}
+                <small>Appointment times use Philippine local time (UTC+8).</small>
               </label>
             </div>
             <label className={styles.field}>
