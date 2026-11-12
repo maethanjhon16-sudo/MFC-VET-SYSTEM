@@ -40,6 +40,7 @@
 .inlab, .scheduled, .preparing, .outfordelivery { color: #2f7fa8; background: #dff0f8; }
 .reviewed, .final, .available, .delivered, .inStock { color: #2e8b57; background: #e1f1e6; }
 .profileonly { color: #59685d; background: #ecefea; }
+.unsaved { color: var(--color-warntext); background: var(--color-warnbg); }
 .overdue, .cancelled, .outofstock, .paused { color: #a14c43; background: #f9e3df; }
 .new { color: #7358b5; background: #ece6f7; }
 .empty { padding: 26px !important; color: #829087 !important; text-align: center; }
@@ -85,7 +86,7 @@
 .profileIdentity { display: flex; align-items: center; gap: 13px; padding-bottom: 14px; border-bottom: 1px solid #e9eee8; }
 .profileIdentity h2, .profileCard > h2 { margin: 0; color: var(--color-ink); font-size: 16px; }
 .profileIdentity p { margin: 4px 0 0; color: var(--color-mute); font-size: 11px; }
-.profileAvatar { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; color: var(--color-forest); background: linear-gradient(180deg, #e3ede2, #a9c4ae); font-size: 14px; font-weight: 800; }
+.profileAvatar { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; color: var(--color-forest); background: linear-gradient(180deg, #e3ede2, #a9c4ae); font-size: 25px; }
 .fieldLabel { display: grid; gap: 6px; color: var(--color-mute); font-size: 10px; font-weight: 700; }
 .fieldLabel input { min-height: 40px; padding: 0 11px; border: 1px solid var(--color-line); border-radius: 8px; color: var(--color-ink); background: #fff; font: inherit; font-size: 12px; }
 .timeRange { display: flex; align-items: end; gap: 12px; max-width: 420px; }

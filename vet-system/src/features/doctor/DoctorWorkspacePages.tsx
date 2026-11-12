@@ -101,6 +101,7 @@ type WorkspaceState = {
   profilePhone: string;
   startTime: string;
   endTime: string;
+  availabilityDirty: boolean;
   recordFormOpen: boolean;
   labFormOpen: boolean;
   conversationFormOpen: boolean;
@@ -202,6 +203,7 @@ function createInitialState(): WorkspaceState {
     profilePhone: '',
     startTime: '08:00',
     endTime: '18:00',
+    availabilityDirty: false,
     recordFormOpen: false,
     labFormOpen: false,
     conversationFormOpen: false,
@@ -257,7 +259,7 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
     case 'ORDER_UPDATED':
       return { ...state, orders: state.orders.map((item) => item.id === action.order.id ? { ...item, status: action.order.status } : item), saving: false, actionError: null, notice: 'Order status updated.' };
     case 'AVAILABILITY_UPDATED':
-      return { ...state, availability: action.days, activeDays: Object.fromEntries(action.days.map((day) => [String(day.weekday), day.isAvailable])), saving: false, actionError: null, notice: 'Availability saved.' };
+      return { ...state, availability: action.days, activeDays: Object.fromEntries(action.days.map((day) => [String(day.weekday), day.isAvailable])), availabilityDirty: false, saving: false, actionError: null, notice: 'Availability saved.' };
     case 'PREFERENCES_UPDATED':
       return { ...state, preferences: action.preferences, notificationSettings: action.preferences, saving: false, actionError: null, notice: 'Notification preferences saved.' };
     case 'PROFILE_UPDATED':
@@ -269,7 +271,7 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
     case 'MESSAGE_SENT':
       return { ...state, messages: [...state.messages, action.message], draft: '', saving: false, actionError: null, notice: 'Message sent.' };
     case 'TOGGLE_DAY':
-      return { ...state, activeDays: { ...state.activeDays, [action.day]: !state.activeDays[action.day] } };
+      return { ...state, activeDays: { ...state.activeDays, [action.day]: !state.activeDays[action.day] }, availabilityDirty: true };
     case 'TOGGLE_SETTING':
       return { ...state, notificationSettings: { ...state.notificationSettings, [action.key]: !state.notificationSettings[action.key] } };
     case 'SELECT_CONVERSATION':
@@ -281,9 +283,9 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
     case 'SET_PROFILE_PHONE':
       return { ...state, profilePhone: action.value };
     case 'SET_START_TIME':
-      return { ...state, startTime: action.value };
+      return { ...state, startTime: action.value, availabilityDirty: true };
     case 'SET_END_TIME':
-      return { ...state, endTime: action.value };
+      return { ...state, endTime: action.value, availabilityDirty: true };
     case 'TOGGLE_RECORD_FORM':
       return { ...state, recordFormOpen: !state.recordFormOpen, actionError: null };
     case 'TOGGLE_LAB_FORM':
@@ -303,6 +305,19 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
 
 function formatPeso(value: number): string {
   return `₱${Math.round(value).toLocaleString('en-PH')}`;
+}
+
+function manilaDate(offsetDays = 0): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  const date = new Date(`${values.year}-${values.month}-${values.day}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
 }
 
 function exportCsv(filename: string, rows: string[][]): void {
@@ -343,6 +358,7 @@ export function DoctorWorkspacePages({
   appointments,
   onNavigate,
   onOpenPatient,
+  onProfileUpdated,
 }: {
   view: DoctorAuxiliaryView;
   doctorName: string;
@@ -350,6 +366,7 @@ export function DoctorWorkspacePages({
   appointments: Appointment[];
   onNavigate: (view: 'appointments' | 'calendar' | 'patients') => void;
   onOpenPatient: (id: string) => void;
+  onProfileUpdated: (name: string) => void;
 }) {
   const [state, dispatch] = useReducer(workspaceReducer, undefined, createInitialState);
   useEffect(() => {
@@ -400,6 +417,8 @@ export function DoctorWorkspacePages({
     return () => { active = false; };
   }, [state.selectedConversationId]);
   const query = state.query.trim().toLowerCase();
+  const todayManila = manilaDate();
+  const weekManila = manilaDate(7);
   const allRecords = useMemo(() => [
     ...state.records.map((record) => ({
       id: record.id,
@@ -448,14 +467,14 @@ export function DoctorWorkspacePages({
     reason: item.summary,
     lastVisit: 'Clinical record follow-up',
     due: new Date(`${item.followUpAt.slice(0, 10)}T12:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }),
-    status: item.followUpAt.slice(0, 10) < new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
+    status: item.followUpAt.slice(0, 10) < todayManila
       ? 'Overdue'
-      : item.followUpAt.slice(0, 10) <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) ? 'Due soon' : 'Scheduled',
+      : item.followUpAt.slice(0, 10) <= weekManila ? 'Due soon' : 'Scheduled',
   })).filter((item) => {
     const matchesText = `${item.patient} ${item.owner} ${item.reason}`.toLowerCase().includes(query);
     const matchesStatus = state.filters['follow-up'] === 'All' || item.status === state.filters['follow-up'];
     return matchesText && matchesStatus;
-  }), [query, state.filters, state.followUps]);
+  }), [query, state.filters, state.followUps, todayManila, weekManila]);
   const visibleServices = SERVICES.filter((service) => `${service.name} ${service.blurb} ${service.category}`.toLowerCase().includes(query)
     && (state.filters.service === 'All' || service.category === state.filters.service));
   const visibleProducts = PRODUCTS.filter((product) => `${product.name} ${product.category}`.toLowerCase().includes(query));
@@ -566,6 +585,7 @@ export function DoctorWorkspacePages({
     try {
       const { profile } = await updateStaffProfile({ fullName: state.profileName, phone: state.profilePhone });
       dispatch({ type: 'PROFILE_UPDATED', profile });
+      onProfileUpdated(profile.fullName);
     } catch (error) {
       dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not save your profile.' });
     }
@@ -688,8 +708,8 @@ export function DoctorWorkspacePages({
       {view === 'follow-ups' && <>
         <div className={styles.metrics}>
           <article><span>Open follow-ups</span><b>{followUpRows.length}</b><small>Saved clinical plans</small></article>
-          <article><span>Overdue</span><b>{state.followUps.filter((item) => item.followUpAt.slice(0, 10) < new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())).length}</b><small>Needs action now</small></article>
-          <article><span>Due soon</span><b>{state.followUps.filter((item) => item.followUpAt.slice(0, 10) >= new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date()) && item.followUpAt.slice(0, 10) <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)).length}</b><small>Next 7 days</small></article>
+          <article><span>Overdue</span><b>{state.followUps.filter((item) => item.followUpAt.slice(0, 10) < todayManila).length}</b><small>Needs action now</small></article>
+          <article><span>Due soon</span><b>{state.followUps.filter((item) => item.followUpAt.slice(0, 10) >= todayManila && item.followUpAt.slice(0, 10) <= weekManila).length}</b><small>Next 7 days</small></article>
           <article><span>Appointments loaded</span><b>{appointments.length}</b><small>From the clinic schedule</small></article>
         </div>
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search by pet or owner..." /></div>
@@ -815,7 +835,7 @@ export function DoctorWorkspacePages({
 
       {view === 'profile' && <div className={styles.profileGrid}>
         <article className={styles.profileCard}>
-          <div className={styles.profileIdentity}><span className={styles.profileAvatar}>{doctorName.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><div><h2>{doctorName}</h2><p>Veterinarian</p></div></div>
+          <div className={styles.profileIdentity}><span className={styles.profileAvatar}>🩺</span><div><h2>{doctorName}</h2><p>Veterinarian</p></div></div>
           <label className={styles.fieldLabel}>Display name<input value={state.profileName || doctorName} onChange={(event) => dispatch({ type: 'SET_PROFILE_NAME', value: event.target.value })} /></label>
           <label className={styles.fieldLabel}>Phone<input value={state.profilePhone} onChange={(event) => dispatch({ type: 'SET_PROFILE_PHONE', value: event.target.value })} /></label>
           <label className={styles.fieldLabel}>Email<input value={state.profile?.email ?? ''} readOnly /></label>
@@ -828,7 +848,7 @@ export function DoctorWorkspacePages({
 
       {view === 'availability' && <>
         <article className={styles.availabilityCard}>
-          <div className={styles.sectionHeading}><div><h2>Weekly doctor availability</h2><p>Set the recurring days and hours saved to your account.</p></div><Status>Saved</Status></div>
+          <div className={styles.sectionHeading}><div><h2>Weekly doctor availability</h2><p>Set the recurring days and hours saved to your account.</p></div><Status>{state.availabilityDirty ? 'Unsaved changes' : 'Saved'}</Status></div>
           <div className={styles.timeRange}><label className={styles.fieldLabel}>Opens<input type="time" value={state.startTime} onChange={(event) => dispatch({ type: 'SET_START_TIME', value: event.target.value })} /></label><span>to</span><label className={styles.fieldLabel}>Closes<input type="time" value={state.endTime} onChange={(event) => dispatch({ type: 'SET_END_TIME', value: event.target.value })} /></label></div>
           <div className={styles.weekdays}>{WEEKDAYS.map((day, index) => { const weekday = String(WEEKDAY_NUMBERS[index]); const isAvailable = state.activeDays[weekday] ?? false; return <label className={styles.weekday} key={day}><span>{day}</span><input type="checkbox" checked={isAvailable} onChange={() => dispatch({ type: 'TOGGLE_DAY', day: weekday })} /><small>{isAvailable ? 'Available' : 'Unavailable'}</small></label>; })}</div>
           <button type="button" className={styles.primaryButton} disabled={state.saving} onClick={() => void saveAvailability()}>{state.saving ? 'Saving…' : 'Save availability'}</button>
