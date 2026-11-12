@@ -107,11 +107,45 @@ export interface BookingDoctor {
   specialization: string | null;
 }
 
+export type PetSpecies = 'Dog' | 'Cat' | 'Bird' | 'Rabbit' | 'Other';
+
+export interface OwnerPet {
+  id: string;
+  name: string;
+  species: PetSpecies;
+  breed: string;
+  dateOfBirth: string | null;
+  createdAt: string;
+}
+
+export interface DoctorPatient extends OwnerPet {
+  ownerName: string;
+  ownerEmail: string;
+  ownerPhone: string;
+  lastVisit: string | null;
+}
+
+export function getOwnerPets() {
+  return request<{ pets: OwnerPet[] }>('/api/owner/pets', undefined, 'GET');
+}
+
+export function createOwnerPet(input: {
+  name: string;
+  species: PetSpecies;
+  breed: string;
+  dateOfBirth: string | null;
+}) {
+  return request<{ pet: OwnerPet }>('/api/owner/pets', input);
+}
+
 export type AppointmentStatus = 'pending' | 'confirmed' | 'declined' | 'cancelled';
 
 export interface Appointment {
   id: string;
+  petId: string | null;
   petName: string;
+  petSpecies: PetSpecies | null;
+  petBreed: string | null;
   serviceId: string;
   serviceName: string;
   doctorId: string | null;
@@ -134,7 +168,7 @@ export function getOwnerAppointments() {
 }
 
 export function createOwnerAppointment(input: {
-  petName: string;
+  petId: string;
   serviceId: string;
   doctorId: string | null;
   scheduledAt: string;
@@ -153,6 +187,10 @@ export function getStaffAppointments() {
 
 export function getStaffSchedule() {
   return request<{ appointments: Appointment[] }>('/api/staff/schedule', undefined, 'GET');
+}
+
+export function getStaffPatients() {
+  return request<{ patients: DoctorPatient[] }>('/api/staff/patients', undefined, 'GET');
 }
 
 export function getStaffDoctors() {

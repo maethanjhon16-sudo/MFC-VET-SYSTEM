@@ -75,6 +75,16 @@
 .addPet:hover { background: #d9e8d8; }
 .addPet b { font-size: 15px; font-weight: 800; color: var(--color-forest); }
 .addPet span { font-size: 12px; font-weight: 500; color: var(--color-mute); }
+.petMessage, .petSuccess { width: 100%; max-width: 430px; margin: 0; padding: 14px 16px; border-radius: 12px; color: var(--color-mute); background: var(--color-gray); font-size: 13px; line-height: 1.5; }
+.petMessage[role="alert"] { color: #8d4037; background: #fbefed; }
+.petSuccess { color: var(--color-ok); background: var(--color-okbg); }
+.petForm { display: flex; flex: 0 0 300px; flex-direction: column; gap: 12px; width: 300px; min-height: 298px; padding: 20px; border: 1px solid var(--color-line); border-radius: 18px; background: var(--color-white); box-shadow: var(--shadow-card); }
+.petForm h3 { margin: 0 0 2px; color: var(--color-ink); font-size: 16px; }
+.petForm label { display: grid; gap: 5px; color: var(--color-ink); font-size: 11px; font-weight: 700; }
+.petForm label span { color: var(--color-mute); font-weight: 500; }
+.petForm input, .petForm select { width: 100%; min-width: 0; height: 36px; padding: 0 9px; border: 1px solid var(--color-line); border-radius: 8px; color: var(--color-ink); background: var(--color-off); font: inherit; font-size: 12px; }
+.petFormActions { display: flex; gap: 8px; margin-top: auto; }
+.petFormActions > * { flex: 1; min-width: 0; height: 40px; padding: 0 10px; font-size: 12px; }
 
 .twoCol { display: flex; align-items: flex-start; gap: 32px; width: 100%; }
 .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }

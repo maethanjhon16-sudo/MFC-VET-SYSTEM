@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import { Icon } from '../../components/ui/Icon';
-import { decideStaffAppointment, getStaffSchedule, type Appointment as ApiAppointment } from '../auth/api';
+import {
+  decideStaffAppointment,
+  getStaffPatients,
+  getStaffSchedule,
+  type Appointment as ApiAppointment,
+  type DoctorPatient,
+} from '../auth/api';
 import { CLINIC_ADDRESS, CLINIC_HOURS, getClinicGreeting } from '../clinicInfo';
 import { DoctorWorkspacePages, type DoctorAuxiliaryView } from './DoctorWorkspacePages';
 import styles from './DoctorFlow.module.css';
@@ -9,6 +15,7 @@ type DoctorView = 'dashboard' | 'appointments' | 'calendar' | 'patients' | 'pati
 type AppointmentStatus = 'Confirmed' | 'Pending' | 'Completed' | 'Declined';
 type Appointment = {
   id: string;
+  petId: string | null;
   owner: string;
   pet: string;
   species: string;
@@ -25,16 +32,11 @@ type Patient = {
   breed: string;
   age: string;
   owner: string;
+  ownerEmail: string;
+  ownerPhone: string;
   lastVisit: string;
   note: string;
 };
-
-const PATIENTS: Patient[] = [
-  { id: 'milo', name: 'Milo', species: 'Dog', breed: 'Shih Tzu', age: '4 years', owner: 'Maria Santos', lastVisit: 'Oct 28, 2026', note: 'Annual wellness check. Vaccinations are up to date.' },
-  { id: 'luna', name: 'Luna', species: 'Cat', breed: 'Domestic shorthair', age: '2 years', owner: 'Paolo Reyes', lastVisit: 'Nov 3, 2026', note: 'Follow-up for skin irritation. Continue prescribed treatment.' },
-  { id: 'coco', name: 'Coco', species: 'Dog', breed: 'Golden Retriever', age: '6 years', owner: 'Ana Cruz', lastVisit: 'Oct 19, 2026', note: 'Dental cleaning completed. Recheck in six months.' },
-  { id: 'bambi', name: 'Bambi', species: 'Rabbit', breed: 'Holland Lop', age: '1 year', owner: 'Jose Dela Cruz', lastVisit: 'Sep 14, 2026', note: 'Healthy appetite and normal activity.' },
-];
 
 function localDate(daysFromToday: number): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -64,6 +66,42 @@ function weekdayLabel(date: string): string {
   });
 }
 
+function ageLabel(dateOfBirth: string | null): string {
+  if (!dateOfBirth) return 'Age not provided';
+  const birth = new Date(`${dateOfBirth.slice(0, 10)}T00:00:00`);
+  const today = new Date();
+  let months = (today.getFullYear() - birth.getFullYear()) * 12 + today.getMonth() - birth.getMonth();
+  if (today.getDate() < birth.getDate()) months -= 1;
+  if (months < 12) return `${Math.max(0, months)} months`;
+  const years = Math.floor(months / 12);
+  return `${years} ${years === 1 ? 'year' : 'years'}`;
+}
+
+function visitDateLabel(value: string | null): string {
+  if (!value) return 'No confirmed visit yet';
+  return new Date(value).toLocaleDateString('en-PH', {
+    timeZone: 'Asia/Manila',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function mapPatient(patient: DoctorPatient): Patient {
+  return {
+    id: patient.id,
+    name: patient.name,
+    species: patient.species,
+    breed: patient.breed || 'Breed not provided',
+    age: ageLabel(patient.dateOfBirth),
+    owner: patient.ownerName,
+    ownerEmail: patient.ownerEmail,
+    ownerPhone: patient.ownerPhone,
+    lastVisit: visitDateLabel(patient.lastVisit),
+    note: 'No clinical notes have been recorded for this pet yet.',
+  };
+}
+
 function mapAppointment(appointment: ApiAppointment): Appointment {
   const date = new Date(appointment.scheduledAt);
   const dateParts = new Intl.DateTimeFormat('en-CA', {
@@ -75,9 +113,10 @@ function mapAppointment(appointment: ApiAppointment): Appointment {
   const dateValues = Object.fromEntries(dateParts.map(({ type, value }) => [type, value]));
   return {
     id: appointment.id,
+    petId: appointment.petId,
     owner: appointment.ownerName ?? 'Pet owner',
     pet: appointment.petName,
-    species: 'Pet',
+    species: appointment.petSpecies ?? 'Pet',
     service: appointment.serviceName,
     date: `${dateValues.year}-${dateValues.month}-${dateValues.day}`,
     time: date.toLocaleTimeString('en-PH', {
@@ -93,7 +132,6 @@ function mapAppointment(appointment: ApiAppointment): Appointment {
 interface DoctorState {
   view: DoctorView;
   patients: Patient[];
-  addingPatient: boolean;
   appointments: Appointment[];
   search: string;
   selectedAppointmentId: string | null;
@@ -102,19 +140,21 @@ interface DoctorState {
   message: string;
   appointmentsLoading: boolean;
   appointmentsError: string | null;
+  patientsLoading: boolean;
+  patientsError: string | null;
   savingAppointmentId: string | null;
 }
 
 type DoctorAction =
   | { type: 'NAVIGATE'; view: DoctorView }
   | { type: 'SET_SEARCH'; value: string }
-  | { type: 'TOGGLE_ADD_PATIENT' }
-  | { type: 'ADD_PATIENT'; patient: Patient }
   | { type: 'OPEN_APPOINTMENT'; id: string }
   | { type: 'OPEN_PATIENT'; id: string }
   | { type: 'BACK' }
   | { type: 'APPOINTMENTS_LOADED'; appointments: ApiAppointment[] }
   | { type: 'APPOINTMENTS_FAILED'; message: string }
+  | { type: 'PATIENTS_LOADED'; patients: DoctorPatient[] }
+  | { type: 'PATIENTS_FAILED'; message: string }
   | { type: 'SAVING_APPOINTMENT'; id: string }
   | { type: 'APPOINTMENT_DECIDED'; id: string; status: 'Confirmed' | 'Declined' }
   | { type: 'APPOINTMENT_ACTION_FAILED'; message: string }
@@ -124,8 +164,7 @@ type DoctorAction =
 function createInitialState(): DoctorState {
   return {
     view: 'dashboard',
-    patients: PATIENTS,
-    addingPatient: false,
+    patients: [],
     appointments: [],
     search: '',
     selectedAppointmentId: null,
@@ -134,6 +173,8 @@ function createInitialState(): DoctorState {
     message: '',
     appointmentsLoading: true,
     appointmentsError: null,
+    patientsLoading: true,
+    patientsError: null,
     savingAppointmentId: null,
   };
 }
@@ -144,15 +185,6 @@ function doctorReducer(state: DoctorState, action: DoctorAction): DoctorState {
       return { ...state, view: action.view, message: '' };
     case 'SET_SEARCH':
       return { ...state, search: action.value };
-    case 'TOGGLE_ADD_PATIENT':
-      return { ...state, addingPatient: !state.addingPatient };
-    case 'ADD_PATIENT':
-      return {
-        ...state,
-        patients: [...state.patients, action.patient],
-        addingPatient: false,
-        message: `${action.patient.name} was added to the patient directory and clinical records.`,
-      };
     case 'OPEN_APPOINTMENT':
       return { ...state, view: 'appointment-details', selectedAppointmentId: action.id, message: '' };
     case 'OPEN_PATIENT':
@@ -168,6 +200,10 @@ function doctorReducer(state: DoctorState, action: DoctorAction): DoctorState {
       };
     case 'APPOINTMENTS_FAILED':
       return { ...state, appointmentsLoading: false, appointmentsError: action.message };
+    case 'PATIENTS_LOADED':
+      return { ...state, patients: action.patients.map(mapPatient), patientsLoading: false, patientsError: null };
+    case 'PATIENTS_FAILED':
+      return { ...state, patientsLoading: false, patientsError: action.message };
     case 'SAVING_APPOINTMENT':
       return { ...state, savingAppointmentId: action.id, appointmentsError: null };
     case 'APPOINTMENT_DECIDED':
@@ -246,9 +282,22 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
     }
   }, []);
 
+  const loadPatients = useCallback(async () => {
+    try {
+      const { patients } = await getStaffPatients();
+      dispatch({ type: 'PATIENTS_LOADED', patients });
+    } catch (error) {
+      dispatch({
+        type: 'PATIENTS_FAILED',
+        message: error instanceof Error ? error.message : 'Could not load assigned patient profiles.',
+      });
+    }
+  }, []);
+
   useEffect(() => {
     void loadSchedule();
-  }, [loadSchedule]);
+    void loadPatients();
+  }, [loadPatients, loadSchedule]);
 
   const pendingCount = state.appointments.filter((item) => item.status === 'Pending').length;
   const appointmentsToday = state.appointments.filter((item) => item.date === today && item.status !== 'Declined');
@@ -278,11 +327,18 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
 
   const navigate = (view: DoctorView) => dispatch({ type: 'NAVIGATE', view });
   const openAppointment = (id: string) => dispatch({ type: 'OPEN_APPOINTMENT', id });
+  const openPatient = (id: string) => {
+    if (!state.patients.some((patient) => patient.id === id)) {
+      dispatch({ type: 'NAVIGATE', view: 'patients' });
+      return;
+    }
+    dispatch({ type: 'OPEN_PATIENT', id });
+  };
   const decideAppointment = async (id: string, decision: 'confirm' | 'decline') => {
     dispatch({ type: 'SAVING_APPOINTMENT', id });
     try {
       await decideStaffAppointment(id, decision);
-      await loadSchedule();
+      await Promise.all([loadSchedule(), loadPatients()]);
       dispatch({ type: 'APPOINTMENT_DECIDED', id, status: decision === 'confirm' ? 'Confirmed' : 'Declined' });
     } catch (error) {
       dispatch({
@@ -422,7 +478,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
                 <div className={styles.recentHeader}><h2>Recently accessed patient records</h2><button type="button" className={styles.textButton} onClick={() => navigate('patients')}>All patients →</button></div>
                 <div className={styles.recentPatients}>
                   {state.patients.map((patient) => (
-                    <button type="button" className={styles.recentPatient} key={patient.id} onClick={() => dispatch({ type: 'OPEN_PATIENT', id: patient.id })}>
+                    <button type="button" className={styles.recentPatient} key={patient.id} onClick={() => openPatient(patient.id)}>
                       <span className={`${styles.petAvatar} ${styles.recentAvatar}`}>{patient.species === 'Dog' ? '🐕' : patient.species === 'Cat' ? '🐈' : '🐇'}</span>
                       <span><b>{patient.name}</b><small>{patient.breed}</small></span>
                     </button>
@@ -462,43 +518,20 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
 
           {state.view === 'patients' && (
             <section className={styles.panel}>
-              <div className={styles.panelHeader}><div><h1>Patient directory</h1><p>Find patient profiles and review their recent visits.</p></div><div className={styles.patientActions}><span className={styles.patientTotal}>{state.patients.length} patients</span><button type="button" className={styles.primaryButton} onClick={() => dispatch({ type: 'TOGGLE_ADD_PATIENT' })}>＋ Add patient</button></div></div>
-              {state.addingPatient && <form className={styles.patientForm} onSubmit={(event) => {
-                event.preventDefault();
-                const formData = new FormData(event.currentTarget);
-                const name = String(formData.get('name') ?? '').trim();
-                if (!name) return;
-                dispatch({
-                  type: 'ADD_PATIENT',
-                  patient: {
-                    id: `patient-${Date.now()}`,
-                    name,
-                    species: String(formData.get('species') ?? 'Other'),
-                    breed: String(formData.get('breed') ?? '').trim() || 'Not specified',
-                    age: String(formData.get('age') ?? '').trim() || 'Not specified',
-                    owner: String(formData.get('owner') ?? '').trim() || 'Owner not provided',
-                    lastVisit: 'No visits yet',
-                    note: 'Patient profile created. No clinical notes have been added yet.',
-                  },
-                });
-              }}>
-                <label>Name<input name="name" required autoFocus placeholder="Patient name" /></label>
-                <label>Species<select name="species" defaultValue="Dog"><option>Dog</option><option>Cat</option><option>Rabbit</option><option>Other</option></select></label>
-                <label>Breed<input name="breed" placeholder="Breed" /></label>
-                <label>Age<input name="age" placeholder="e.g. 2 years" /></label>
-                <label>Owner<input name="owner" placeholder="Owner name" /></label>
-                <div><button type="submit" className={styles.primaryButton}>Save patient</button><button type="button" className={styles.textButton} onClick={() => dispatch({ type: 'TOGGLE_ADD_PATIENT' })}>Cancel</button></div>
-              </form>}
+              <div className={styles.panelHeader}><div><h1>Patient directory</h1><p>Owners’ pet profiles appear here when an appointment is assigned to you.</p></div><div className={styles.patientActions}><span className={styles.patientTotal}>{state.patients.length} patients</span><button type="button" className={styles.secondaryButton} onClick={() => void loadPatients()} disabled={state.patientsLoading}>↻&nbsp; Refresh</button></div></div>
+              {state.patientsError && <p className={styles.message} role="alert">{state.patientsError}</p>}
               <label className={styles.searchBox}><span>⌕</span><input value={state.search} onChange={(event) => dispatch({ type: 'SET_SEARCH', value: event.target.value })} placeholder="Search by pet, owner, or breed" aria-label="Search patients" /></label>
               <div className={styles.tableWrap}>
                 <table className={styles.table}>
                   <thead><tr><th>Patient</th><th>Owner</th><th>Breed</th><th>Age</th><th>Last visit</th><th /></tr></thead>
-                  <tbody>{visiblePatients.map((patient) => <tr key={patient.id}>
-                    <td><button type="button" className={styles.patientCell} onClick={() => dispatch({ type: 'OPEN_PATIENT', id: patient.id })}><span className={styles.petAvatar}>{patient.species === 'Dog' ? '🐕' : patient.species === 'Cat' ? '🐈' : '🐇'}</span><span><b>{patient.name}</b><small>{patient.species}</small></span></button></td>
+                  <tbody>{state.patientsLoading
+                    ? <tr><td className={styles.empty} colSpan={6}>Loading assigned patient profiles…</td></tr>
+                    : visiblePatients.map((patient) => <tr key={patient.id}>
+                    <td><button type="button" className={styles.patientCell} onClick={() => openPatient(patient.id)}><span className={styles.petAvatar}>{patient.species === 'Dog' ? '🐕' : patient.species === 'Cat' ? '🐈' : '🐇'}</span><span><b>{patient.name}</b><small>{patient.species}</small></span></button></td>
                     <td>{patient.owner}</td><td>{patient.breed}</td><td>{patient.age}</td><td>{patient.lastVisit}</td>
-                    <td><button type="button" className={styles.textButton} onClick={() => dispatch({ type: 'OPEN_PATIENT', id: patient.id })}>View profile →</button></td>
+                    <td><button type="button" className={styles.textButton} onClick={() => openPatient(patient.id)}>View profile →</button></td>
                   </tr>)}
-                  {visiblePatients.length === 0 && <tr><td className={styles.empty} colSpan={6}>No patients found. Try a different search.</td></tr>}</tbody>
+                  {!state.patientsLoading && visiblePatients.length === 0 && <tr><td className={styles.empty} colSpan={6}>{state.search ? 'No patients found. Try a different search.' : 'No patient profiles are linked to your appointments yet.'}</td></tr>}</tbody>
                 </table>
               </div>
             </section>
@@ -508,9 +541,9 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
             <section className={styles.panel}>
               <button type="button" className={styles.backButton} onClick={() => navigate('patients')}>←&nbsp; Patient directory</button>
               <div className={styles.profileHeader}><span className={`${styles.petAvatar} ${styles.largePet}`}>{selectedPatient.species === 'Dog' ? '🐕' : selectedPatient.species === 'Cat' ? '🐈' : '🐇'}</span><div><h1>{selectedPatient.name}</h1><p>{selectedPatient.breed} · {selectedPatient.age} · {selectedPatient.species}</p><span>Patient ID: MFC-{selectedPatient.id.toUpperCase()}</span></div><button type="button" className={styles.secondaryButton} onClick={() => navigate('appointments')}>Book follow-up</button></div>
-              <div className={styles.profileGrid}><article className={styles.detailCard}><h2>Owner information</h2><p><b>{selectedPatient.owner}</b><small>Pet owner</small></p><p><b>Contact through clinic</b><small>Contact details are protected</small></p></article><article className={styles.detailCard}><h2>Recent clinical notes</h2><p>{selectedPatient.note}</p><small>Last visit · {selectedPatient.lastVisit}</small></article></div>
+              <div className={styles.profileGrid}><article className={styles.detailCard}><h2>Owner information</h2><p><b>{selectedPatient.owner}</b><small>Pet owner</small></p><p><b>{selectedPatient.ownerEmail}</b><small>{selectedPatient.ownerPhone || 'No phone number on file'}</small></p></article><article className={styles.detailCard}><h2>Clinical records</h2><p>{selectedPatient.note}</p><small>Last confirmed visit · {selectedPatient.lastVisit}</small></article></div>
               <div className={styles.panelHeader}><div><h2>Visit history</h2><p>Appointments for {selectedPatient.name}</p></div></div>
-              <AppointmentTable appointments={state.appointments.filter((item) => item.pet === selectedPatient.name)} onOpen={openAppointment} />
+              <AppointmentTable appointments={state.appointments.filter((item) => item.petId === selectedPatient.id)} onOpen={openAppointment} />
             </section>
           )}
 
@@ -534,7 +567,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
               patients={state.patients}
               appointments={state.appointments}
               onNavigate={navigate}
-              onOpenPatient={(id) => dispatch({ type: 'OPEN_PATIENT', id })}
+              onOpenPatient={openPatient}
             />
           )}
         </div>
