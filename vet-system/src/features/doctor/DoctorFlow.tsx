@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
+import { Icon } from '../../components/ui/Icon';
 import { decideStaffAppointment, getStaffSchedule, type Appointment as ApiAppointment } from '../auth/api';
+import { CLINIC_ADDRESS, CLINIC_HOURS, getClinicGreeting } from '../clinicInfo';
 import { StaffAppointmentQueue } from '../appointments/StaffAppointmentQueue';
 import styles from './DoctorFlow.module.css';
 
@@ -209,10 +211,11 @@ function AppointmentTable({
 }
 
 interface DoctorFlowProps {
+  doctorName: string;
   onSignOut: () => void;
 }
 
-export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
+export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
   const [state, dispatch] = useReducer(doctorReducer, undefined, createInitialState);
   const today = localDate(0);
   const loadSchedule = useCallback(async () => {
@@ -288,7 +291,7 @@ export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
         </div>
         <div className={styles.doctorCard}>
           <span className={styles.avatar}>AR</span>
-          <span><b>Dr. Andrea Reyes</b><small>Veterinarian</small></span>
+          <span><b>{doctorName}</b><small>Veterinarian</small></span>
         </div>
         <p className={styles.navLabel}>WORKSPACE</p>
         <nav className={styles.navigation} aria-label="Doctor workspace">
@@ -309,7 +312,7 @@ export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
           <div className={styles.topActions}>
             <span className={styles.todayLabel}>{new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'short', day: 'numeric' })}</span>
             <button type="button" className={styles.notification} aria-label={`Notifications, ${pendingCount} pending requests`} onClick={() => navigate('appointments')}>♧{pendingCount > 0 && <i>{pendingCount}</i>}</button>
-            <button type="button" className={styles.topProfile} onClick={() => navigate('patients')}><span className={styles.avatarSmall}>AR</span> Dr. Andrea <span>⌄</span></button>
+            <button type="button" className={styles.topProfile} onClick={() => navigate('patients')}><span className={styles.avatarSmall}>{doctorName.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span> {doctorName} <span>⌄</span></button>
           </div>
         </header>
 
@@ -320,7 +323,12 @@ export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
           {state.view === 'dashboard' && (
             <>
               <section className={styles.welcome}>
-                <div><p className={styles.eyebrow}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}</p><h1>Good morning, Dr. Andrea <span>☀</span></h1><p>Here’s what’s happening at your clinic today.</p></div>
+                <div>
+                  <p className={styles.clinicHours}><Icon name="info-clock" size={15} />{CLINIC_HOURS}</p>
+                  <p className={styles.eyebrow}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}</p>
+                  <h1>{getClinicGreeting()}, {doctorName}</h1>
+                  <p>Here’s what’s happening at your clinic today.</p>
+                </div>
                 <button type="button" className={styles.primaryButton} onClick={() => navigate('calendar')}>＋&nbsp; View schedule</button>
               </section>
 
@@ -419,7 +427,7 @@ export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
               <div className={styles.panelHeader}><div><h1>{selectedAppointment.service}</h1><p>Appointment request · {selectedAppointment.id.toUpperCase()}</p></div><Status>{selectedAppointment.status}</Status></div>
               <div className={styles.detailGrid}>
                 <article className={styles.detailCard}><h2>Visit details</h2><p><b>{selectedAppointment.pet}</b><small>{selectedAppointment.species}</small></p><p><b>{dateLabel(selectedAppointment.date)} · {selectedAppointment.time}</b><small>Requested appointment time</small></p><p><b>Reason for visit</b><small>{selectedAppointment.reason}</small></p></article>
-                <article className={styles.detailCard}><h2>Pet owner</h2><p><b>{selectedAppointment.owner}</b><small>Registered pet owner</small></p><p><b>MFC PET LIFE Clinic</b><small>24 Mabini St., Davao City</small></p></article>
+                <article className={styles.detailCard}><h2>Pet owner</h2><p><b>{selectedAppointment.owner}</b><small>Registered pet owner</small></p><p><b>MFC PET LIFE Clinic</b><small>{CLINIC_ADDRESS}</small></p></article>
               </div>
               {selectedAppointment.status === 'Pending' && <div className={styles.detailActions}><button type="button" className={styles.secondaryButton} disabled={state.savingAppointmentId !== null} onClick={() => void decideAppointment(selectedAppointment.id, 'decline')}>Decline request</button><button type="button" className={styles.primaryButton} disabled={state.savingAppointmentId !== null} onClick={() => void decideAppointment(selectedAppointment.id, 'confirm')}>{state.savingAppointmentId === selectedAppointment.id ? 'Saving…' : '✓  Confirm appointment'}</button></div>}
               {selectedAppointment.status === 'Confirmed' && <div className={styles.confirmedNote}>This appointment is confirmed and added to your schedule.</div>}

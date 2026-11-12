@@ -1,6 +1,7 @@
 import { Icon } from '../../../components/ui/Icon';
 import { Photo } from '../../../components/owner/Photo';
 import { RailSection, ServiceMiniCard } from '../../../components/owner/OwnerParts';
+import { CLINIC_ADDRESS } from '../../clinicInfo';
 import { DOCTORS, SERVICES } from '../data';
 import { formatPeso, type OwnerNav, type Service } from '../types';
 import s from './Screens.module.css';
@@ -64,7 +65,7 @@ export function ServiceDetails({ nav, service }: { nav: OwnerNav; service: Servi
           <div className={s.divider} />
           {[
             { icon: 'info-clock', text: service.visit },
-            { icon: 'info-pin', text: 'MFC Pet Clinic, Davao City' },
+            { icon: 'info-pin', text: CLINIC_ADDRESS },
             { icon: 'info-shield', text: 'Licensed veterinarians' },
             { icon: 'info-calendar', text: `Next slot: ${service.nextSlot}` },
           ].map((line) => (

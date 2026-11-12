@@ -1,6 +1,7 @@
 import { Icon } from '../../../components/ui/Icon';
 import { Photo } from '../../../components/owner/Photo';
 import { ProductCard, RailSection } from '../../../components/owner/OwnerParts';
+import { CLINIC_CITY } from '../../clinicInfo';
 import { ALSO_LIKE, CATEGORY_LABEL, PRODUCTS, SAMPLE_REVIEWS, productsByIds } from '../data';
 import type { ProductTab } from '../ownerReducer';
 import { formatPeso, type OwnerNav, type Product } from '../types';
@@ -23,7 +24,7 @@ interface ProductDetailsProps {
 const DELIVERY = [
   { icon: 'truck', text: 'Free delivery on orders above ₱1,500' },
   { icon: 'info-shield', text: 'Vet-approved formula · 100% authentic' },
-  { icon: 'info-clock', text: 'Delivered in 2–3 days within Davao City' },
+  { icon: 'info-clock', text: `Delivered in 2–3 days within ${CLINIC_CITY}` },
 ] as const;
 
 export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onSize, onQty, onTab, onThumb, onAdd }: ProductDetailsProps) {
@@ -37,6 +38,10 @@ export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onSiz
   ];
   const shown = gallery[thumb] ?? { emoji: product.emoji, tone: product.tone };
   const related = productsByIds(ALSO_LIKE).filter((p) => p.id !== product.id);
+  const recommended = [
+    ...related,
+    ...PRODUCTS.filter((p) => p.id !== product.id && !related.some((item) => item.id === p.id)),
+  ].slice(0, 4);
   const tabs: { key: ProductTab; label: string }[] = [
     { key: 'description', label: 'Description' },
     { key: 'ingredients', label: 'Ingredients' },
@@ -135,9 +140,7 @@ export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onSiz
           ))}
         </div>
         {tab === 'description' && (
-          <p className={s.tabText}>
-            {product.blurb} No artificial colors or preservatives. Recommended for adult pets; follow the feeding guide on the pack or ask your veterinarian.
-          </p>
+          <p className={s.tabText}>{product.blurb}</p>
         )}
         {tab === 'ingredients' && <p className={s.tabText}>{product.ingredients}</p>}
         {tab === 'reviews' && (
@@ -153,7 +156,7 @@ export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onSiz
       </section>
 
       <RailSection title="You may also like" linkLabel="Visit shop" onLink={() => nav.shop()}>
-        {(related.length >= 5 ? related : PRODUCTS.filter((p) => p.id !== product.id).slice(0, 5)).map((p) => (
+        {recommended.map((p) => (
           <ProductCard key={p.id} product={p} width={246} onOpen={() => nav.product(p.id)} />
         ))}
       </RailSection>

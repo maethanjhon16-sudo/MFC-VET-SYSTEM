@@ -80,13 +80,13 @@ export function LoginScreen({ variant, go, exit }: LoginScreenProps) {
         throw new Error('Enter your email and password.');
       }
 
-      await login({
+      const { user } = await login({
         email: identifier.trim(),
         password,
         role: variant === 'admin' ? 'admin' : variant,
         remember: formData.has('remember'),
       });
-      exit(config.onLogin);
+      exit(config.onLogin, user);
     } catch (error) {
       request.fail(error);
     }

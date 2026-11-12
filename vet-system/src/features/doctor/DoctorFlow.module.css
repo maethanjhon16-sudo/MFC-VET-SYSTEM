@@ -42,6 +42,7 @@
 .welcome h1 span { color: #dbab46; font-size: 20px; }
 .welcome p { margin: 0; color: #718078; font-size: 13px; }
 .welcome .eyebrow { color: #748579; font-size: 10px; font-weight: 800; letter-spacing: .1em; }
+.welcome .clinicHours { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 10px; padding: 7px 11px; border: 1px solid #c8d9c8; border-radius: 30px; color: #245c3e; background: #e7f0e5; font-size: 11px; font-weight: 700; }
 .primaryButton, .secondaryButton { min-height: 40px; padding: 0 16px; border: 1px solid #1f593c; border-radius: 9px; color: #fff; background: #1f593c; box-shadow: 0 3px 7px rgba(31,77,54,.15); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .primaryButton:hover { background: #153f2c; }
 .secondaryButton { border-color: #dce5dc; color: #355643; background: #fff; box-shadow: none; }

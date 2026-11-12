@@ -1,3 +1,5 @@
+import type { AuthUser } from './api';
+
 /** One entry per frame in the Figma "1 · AUTHENTICATION (Shared)" section. */
 export type AuthScreen =
   | 'role-selection'
@@ -16,5 +18,5 @@ export type ExitDestination = 'owner-home' | 'doctor-dashboard' | 'administrator
 
 export interface ScreenProps {
   go: (screen: AuthScreen) => void;
-  exit: (destination: ExitDestination) => void;
+  exit: (destination: ExitDestination, user?: AuthUser) => void;
 }

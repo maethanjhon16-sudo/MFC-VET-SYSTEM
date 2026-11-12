@@ -44,10 +44,11 @@ function adminReducer(state: AdminState, action: AdminAction): AdminState {
 }
 
 interface AdminFlowProps {
+  adminName: string;
   onSignOut: () => void;
 }
 
-export function AdminFlow({ onSignOut }: AdminFlowProps) {
+export function AdminFlow({ adminName, onSignOut }: AdminFlowProps) {
   const [state, dispatch] = useReducer(adminReducer, {
     applications: [],
     loading: true,
@@ -89,7 +90,7 @@ export function AdminFlow({ onSignOut }: AdminFlowProps) {
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.brand}><span>✚</span><b>MFC PET LIFE</b><small>ADMINISTRATION</small></div>
-        <div className={styles.headerRight}><span>Clinic administrator</span><button type="button" onClick={onSignOut}>Sign out</button></div>
+        <div className={styles.headerRight}><span>{adminName}</span><button type="button" onClick={onSignOut}>Sign out</button></div>
       </header>
       <main className={styles.content}>
         <div className={styles.heading}>

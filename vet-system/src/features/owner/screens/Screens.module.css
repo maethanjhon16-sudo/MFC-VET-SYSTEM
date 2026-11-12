@@ -6,6 +6,7 @@
 .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.8px; color: var(--color-purple); }
 .title h1 { margin: 0; font-size: 32px; font-weight: 800; line-height: normal; color: var(--color-ink); }
 .title p { margin: 0; font-size: 14px; font-weight: 500; color: var(--color-mute); }
+.openHours { display: inline-flex; align-items: center; align-self: flex-start; gap: 8px; margin-bottom: 4px; padding: 8px 12px; border: 1px solid var(--color-sagemid); border-radius: 99px; background: var(--color-sage); color: var(--color-forest); font-size: 12px; font-weight: 700; }
 .headerActions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 
 .btn {
