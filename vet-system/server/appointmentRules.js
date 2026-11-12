@@ -1,5 +1,5 @@
 export const appointmentServices = new Map([
-  ['consultation', { name: 'Consultation', durationMinutes: 45 }],
+  ['consultation', { name: 'Consultation', durationMinutes: 30 }],
   ['vaccination', { name: 'Vaccination', durationMinutes: 30 }],
   ['deworming', { name: 'Deworming', durationMinutes: 30 }],
   ['confinement', { name: 'Confinement', durationMinutes: 60 }],
