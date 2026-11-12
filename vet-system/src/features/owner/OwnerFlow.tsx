@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { OwnerShell } from '../../components/owner/OwnerShell';
-import { getOwnerServices } from '../auth/api';
+import { getOwnerInventory, getOwnerServices } from '../auth/api';
 import { getProduct, getService, PRODUCTS, SERVICES } from './data';
 import { cartCount, createInitialState, ownerReducer } from './ownerReducer';
 import { ComingSoon } from './screens/ComingSoon';
@@ -79,6 +79,9 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
   const [cartStorageError, setCartStorageError] = useState<string | null>(null);
   const [enabledServiceIds, setEnabledServiceIds] = useState<string[]>(() => SERVICES.map((service) => service.id));
   const [serviceSettingsError, setServiceSettingsError] = useState<string | null>(null);
+  const [stockLevels, setStockLevels] = useState<Record<string, number>>({});
+  const [inventoryReady, setInventoryReady] = useState(false);
+  const [inventoryError, setInventoryError] = useState<string | null>(null);
 
   const nav = useMemo<OwnerNav>(
     () => ({
@@ -156,6 +159,42 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    let loading = false;
+    const refresh = async () => {
+      if (loading) return;
+      loading = true;
+      try {
+        const { inventory } = await getOwnerInventory();
+        if (active) {
+          setStockLevels(Object.fromEntries(inventory.map((item) => [item.productId, item.quantity])));
+          setInventoryReady(true);
+          setInventoryError(null);
+        }
+      } catch (error) {
+        if (active) {
+          setInventoryError(error instanceof Error ? error.message : 'Could not load current product stock.');
+        }
+      } finally {
+        loading = false;
+      }
+    };
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) void refresh();
+    };
+    void refresh();
+    const timer = window.setInterval(refreshIfVisible, 30_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
+  }, []);
+
   // New page → start at the top.
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -182,7 +221,8 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
     >
       {cartStorageError && <p className={s.pageError} role="alert">Your cart could not be saved on this device. {cartStorageError}</p>}
       {serviceSettingsError && <p className={s.pageError} role="alert">Could not refresh service availability. Booking requests are still checked by the clinic. {serviceSettingsError}</p>}
-      {state.screen === 'owner-home' && <OwnerHome nav={nav} ownerName={ownerName} enabledServiceIds={enabledServiceIds} />}
+      {inventoryError && <p className={s.pageError} role="alert">Could not refresh product stock. {inventoryError}</p>}
+      {state.screen === 'owner-home' && <OwnerHome nav={nav} ownerName={ownerName} enabledServiceIds={enabledServiceIds} stockLevels={stockLevels} />}
       {state.screen === 'owner-services' && (
         <OwnerServices nav={nav} chip={state.servicesChip} enabledServiceIds={enabledServiceIds} onChip={(chip) => dispatch({ type: 'SET_SERVICES_CHIP', chip })} />
       )}
@@ -211,6 +251,9 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
           onClear={() => dispatch({ type: 'CLEAR_CART' })}
           onContinueShopping={() => nav.shop()}
           onOrderPlaced={nav.orders}
+          stockLevels={stockLevels}
+          inventoryReady={inventoryReady}
+          inventoryError={inventoryError}
         />
       )}
       {state.screen === 'owner-orders' && <OwnerOrders nav={nav} />}
@@ -225,6 +268,7 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
           sort={state.sort}
           sortOpen={state.sortOpen}
           cartCount={cartCount(state.cart)}
+          stockLevels={stockLevels}
           onChip={(chip) => dispatch({ type: 'SET_SHOP_CHIP', chip })}
           onQuery={(query) => dispatch({ type: 'SET_QUERY', query })}
           onSort={(sort) => dispatch({ type: 'SET_SORT', sort })}
@@ -236,6 +280,12 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
           key={state.productId}
           nav={nav}
           product={product}
+          stockCount={stockLevels[product.id] ?? 0}
+          inventoryReady={inventoryReady}
+          stockLevels={stockLevels}
+          maxQuantity={Math.max(0, (stockLevels[product.id] ?? 0) - state.cart
+            .filter((line) => line.productId === product.id)
+            .reduce((sum, line) => sum + line.qty, 0))}
           sizeIndex={state.sizeIndex}
           qty={state.qty}
           tab={state.tab}

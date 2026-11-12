@@ -14,6 +14,7 @@ interface OwnerShopProps {
   sort: SortKey;
   sortOpen: boolean;
   cartCount: number;
+  stockLevels: Record<string, number>;
   onChip: (chip: ProductCategory | 'all') => void;
   onQuery: (query: string) => void;
   onSort: (sort: SortKey) => void;
@@ -29,7 +30,7 @@ function sortProducts(list: Product[], sort: SortKey): Product[] {
   return copy;
 }
 
-export function OwnerShop({ nav, chip, query, sort, sortOpen, cartCount, onChip, onQuery, onSort, onToggleSort }: OwnerShopProps) {
+export function OwnerShop({ nav, chip, query, sort, sortOpen, cartCount, stockLevels, onChip, onQuery, onSort, onToggleSort }: OwnerShopProps) {
   const filtering = chip !== 'all' || query.trim() !== '' || sort !== 'Popular';
   const q = query.trim().toLowerCase();
   const results = sortProducts(
@@ -141,7 +142,7 @@ export function OwnerShop({ nav, chip, query, sort, sortOpen, cartCount, onChip,
           {results.length > 0 ? (
             <div className={s.productGrid}>
               {results.map((p) => (
-                <ProductCard key={p.id} product={p} width={246} onOpen={() => nav.product(p.id)} />
+                <ProductCard key={p.id} product={p} width={246} stockCount={stockLevels[p.id]} onOpen={() => nav.product(p.id)} />
               ))}
             </div>
           ) : (
@@ -158,7 +159,7 @@ export function OwnerShop({ nav, chip, query, sort, sortOpen, cartCount, onChip,
               <span className={`${s.badge} ${s.badgeSky}`}>Clinic shop</span>
               <h2 className={s.heroTitle} style={{ fontSize: 34 }}>Everyday essentials for happier, healthier pets</h2>
               <p className={s.heroSub} style={{ width: 560, fontSize: 15, lineHeight: '23px', color: '#eadbc4' }}>
-                Browse clinic products. The care team confirms stock, delivery fees, and fulfillment before completing an order.
+                Live stock is shown for every product and checked again at checkout. The clinic confirms delivery fees and fulfillment.
               </p>
               <button type="button" className={`${s.btn} ${s.btnWhite}`} style={{ width: 190 }} onClick={() => onChip('dog-food')}>
                 Shop Dog Food
@@ -168,13 +169,13 @@ export function OwnerShop({ nav, chip, query, sort, sortOpen, cartCount, onChip,
           </section>
 
           <RailSection title="Featured picks" linkLabel="See all" onLink={() => onChip('all')}>
-            {productsByIds(SHOP_FEATURED).map((p) => <ProductCard key={p.id} product={p} width={246} onOpen={() => nav.product(p.id)} />)}
+            {productsByIds(SHOP_FEATURED).map((p) => <ProductCard key={p.id} product={p} width={246} stockCount={stockLevels[p.id]} onOpen={() => nav.product(p.id)} />)}
           </RailSection>
           <RailSection title="Dog & cat food" linkLabel="See all" onLink={() => onChip('dog-food')}>
-            {productsByIds(SHOP_FOOD).map((p) => <ProductCard key={p.id} product={p} width={246} onOpen={() => nav.product(p.id)} />)}
+            {productsByIds(SHOP_FOOD).map((p) => <ProductCard key={p.id} product={p} width={246} stockCount={stockLevels[p.id]} onOpen={() => nav.product(p.id)} />)}
           </RailSection>
           <RailSection title="Vitamins, grooming & accessories" linkLabel="See all" onLink={() => onChip('vitamins')}>
-            {productsByIds(SHOP_ACCESSORIES).map((p) => <ProductCard key={p.id} product={p} width={246} onOpen={() => nav.product(p.id)} />)}
+            {productsByIds(SHOP_ACCESSORIES).map((p) => <ProductCard key={p.id} product={p} width={246} stockCount={stockLevels[p.id]} onOpen={() => nav.product(p.id)} />)}
           </RailSection>
         </>
       )}

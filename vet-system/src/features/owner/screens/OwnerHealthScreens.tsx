@@ -352,7 +352,10 @@ export function OwnerMedicalRecords({ nav, initialPetId = '' }: { nav: OwnerNav;
               <small>Veterinarian: {entry.doctorName}</small>
               {entry.kind === 'record' && entry.record.diagnosis && <p><b>Diagnosis:</b> {entry.record.diagnosis}</p>}
               {entry.kind === 'record' && entry.record.treatment && <p><b>Treatment:</b> {entry.record.treatment}</p>}
-              {entry.kind === 'record' && entry.record.followUpAt && <small>Follow-up: {new Date(`${entry.record.followUpAt.slice(0, 10)}T12:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' })}</small>}
+              {entry.kind === 'record' && entry.record.followUpAt && <small>
+                Follow-up: {new Date(`${entry.record.followUpAt.slice(0, 10)}T12:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' })}
+                {entry.record.followUpCompletedAt ? ` · Completed ${formatWhen(entry.record.followUpCompletedAt)}` : ''}
+              </small>}
               {entry.kind === 'lab' && <span className={`${s.badge} ${entry.result.status === 'ready' || entry.result.status === 'reviewed' ? s.badgeOk : s.badgeWarn}`}>{entry.result.status.replaceAll('_', ' ')}</span>}
             </div>
           </article>

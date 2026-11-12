@@ -13,7 +13,7 @@ import {
   isValidAppointmentTime,
   isWithinDoctorAvailability,
 } from './appointmentRules.js';
-import { canTransitionOrderStatus } from './orderRules.js';
+import { canTransitionOrderStatus, getInventoryShortages } from './orderRules.js';
 import { productCatalog } from './productCatalog.js';
 
 const app = express();
@@ -640,7 +640,8 @@ app.get('/api/owner/medical-records', requireOwner, asyncRoute(async (req, res) 
     pool.query(
       `SELECT r.id, r.pet_id AS "petId", r.appointment_id AS "appointmentId",
               r.record_type AS "recordType", r.summary, r.diagnosis, r.treatment,
-              r.follow_up_at AS "followUpAt", r.created_at AS "createdAt",
+              r.follow_up_at AS "followUpAt",
+              r.follow_up_completed_at AS "followUpCompletedAt", r.created_at AS "createdAt",
               p.name AS "petName", p.species, d.full_name AS "doctorName"
        FROM clinical_records r
        JOIN pets p ON p.id = r.pet_id
@@ -980,6 +981,13 @@ app.get('/api/owner/orders', requireOwner, asyncRoute(async (req, res) => {
   res.json({ orders: result.rows });
 }));
 
+app.get('/api/owner/inventory', requireOwner, asyncRoute(async (_req, res) => {
+  const result = await pool.query(
+    'SELECT product_id AS "productId", quantity, updated_at AS "updatedAt" FROM inventory_stock ORDER BY product_id',
+  );
+  res.json({ inventory: result.rows });
+}));
+
 app.post('/api/owner/orders', requireSameOrigin, requireOwner, appointmentLimiter, asyncRoute(async (req, res) => {
   const body = req.body ?? {};
   const items = body.items;
@@ -1031,13 +1039,34 @@ app.post('/api/owner/orders', requireSameOrigin, requireOwner, appointmentLimite
   try {
     await client.query('BEGIN');
     transactionOpen = true;
+    const inventoryResult = await client.query(
+      `SELECT product_id, quantity
+       FROM inventory_stock
+       WHERE product_id = ANY($1::text[])
+       ORDER BY product_id
+       FOR UPDATE`,
+      [[...new Set(lines.map((item) => item.productId))]],
+    );
+    const shortages = getInventoryShortages(lines, inventoryResult.rows);
+    if (shortages.length > 0) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      const details = shortages.map(({ productId, available, requested }) => {
+        const productName = productCatalog.get(productId)?.name ?? productId;
+        return `${productName}: ${available} available, ${requested} requested`;
+      });
+      return res.status(409).json({
+        error: `Stock changed before checkout. ${details.join('; ')}. Update your cart and try again.`,
+      });
+    }
+
     const orderId = randomUUID();
     const paymentMethod = fulfillmentMethod === 'delivery' ? 'cash_on_delivery' : 'pay_at_clinic';
     await client.query(
       `INSERT INTO orders (
          id, owner_id, status, payment_method, fulfillment_method,
-         delivery_address, contact_phone, total_amount
-       ) VALUES ($1, $2, 'new', $3, $4, $5, $6, $7)`,
+         delivery_address, contact_phone, total_amount, stock_reserved
+       ) VALUES ($1, $2, 'new', $3, $4, $5, $6, $7, true)`,
       [
         orderId, req.user.id, paymentMethod, fulfillmentMethod,
         fulfillmentMethod === 'delivery' ? deliveryAddress : '', contactPhone, total,
@@ -1048,6 +1077,16 @@ app.post('/api/owner/orders', requireSameOrigin, requireOwner, appointmentLimite
         `INSERT INTO order_items (id, order_id, product_id, product_name, quantity, unit_price)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [randomUUID(), orderId, item.productId, item.productName, item.quantity, item.unitPrice],
+      );
+    }
+    const requestedByProduct = new Map();
+    for (const item of lines) {
+      requestedByProduct.set(item.productId, (requestedByProduct.get(item.productId) ?? 0) + item.quantity);
+    }
+    for (const [productId, quantity] of requestedByProduct) {
+      await client.query(
+        'UPDATE inventory_stock SET quantity = quantity - $2, updated_at = now() WHERE product_id = $1',
+        [productId, quantity],
       );
     }
     await client.query('COMMIT');
@@ -1146,7 +1185,8 @@ app.get('/api/staff/clinical-records', requireClinicalStaff, asyncRoute(async (r
   const result = await pool.query(
         `SELECT r.id, r.pet_id AS "petId", r.appointment_id AS "appointmentId",
           r.record_type AS "recordType", r.summary, r.diagnosis, r.treatment,
-          r.follow_up_at AS "followUpAt", r.created_at AS "createdAt",
+          r.follow_up_at AS "followUpAt",
+          r.follow_up_completed_at AS "followUpCompletedAt", r.created_at AS "createdAt",
           p.name AS "petName", p.species, o.full_name AS "ownerName",
           d.full_name AS "doctorName"
      FROM clinical_records r
@@ -1197,7 +1237,8 @@ app.post('/api/staff/clinical-records', requireSameOrigin, requireClinicalStaff,
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id, pet_id AS "petId", appointment_id AS "appointmentId",
        record_type AS "recordType", summary, diagnosis, treatment,
-       follow_up_at AS "followUpAt", created_at AS "createdAt"`,
+       follow_up_at AS "followUpAt",
+       follow_up_completed_at AS "followUpCompletedAt", created_at AS "createdAt"`,
     [randomUUID(), petId, doctorId, recordType, summary, diagnosis, treatment, followUpAt],
   );
   return res.status(201).json({ record: result.rows[0] });
@@ -1242,6 +1283,35 @@ app.post('/api/staff/lab-results', requireSameOrigin, requireClinicalStaff, asyn
   return res.status(201).json({ labResult: result.rows[0] });
 }));
 
+app.patch('/api/staff/lab-results/:id', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
+  const status = req.body?.status;
+  const resultText = typeof req.body?.resultText === 'string' ? req.body.resultText.trim() : '';
+  if (!['in_lab', 'ready'].includes(status) || resultText.length > 5000 || (status === 'ready' && !validText(resultText, 5000))) {
+    return res.status(400).json({ error: 'Enter a valid lab status and include results before marking the test ready.' });
+  }
+  const updated = await pool.query(
+    `UPDATE lab_results
+     SET status = $2, result_text = $3, reviewed_at = NULL
+     WHERE id = $1 AND status IN ('pending', 'in_lab', 'ready')
+       AND ($4 = 'admin' OR doctor_id = $5)
+     RETURNING id`,
+    [req.params.id, status, resultText, req.user.role, req.user.id],
+  );
+  if (!updated.rowCount) return res.status(404).json({ error: 'That editable lab request was not found.' });
+  const result = await pool.query(
+    `SELECT l.id, l.pet_id AS "petId", l.appointment_id AS "appointmentId",
+            l.test_name AS "testName", l.status, l.result_text AS "resultText",
+            l.requested_at AS "requestedAt", l.reviewed_at AS "reviewedAt",
+            p.name AS "petName", p.species, o.full_name AS "ownerName"
+     FROM lab_results l
+     JOIN pets p ON p.id = l.pet_id
+     JOIN users o ON o.id = p.owner_id
+     WHERE l.id = $1`,
+    [req.params.id],
+  );
+  return res.json({ labResult: result.rows[0] });
+}));
+
 app.post('/api/staff/lab-results/:id/review', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
   const result = await pool.query(
     `UPDATE lab_results
@@ -1257,17 +1327,31 @@ app.post('/api/staff/lab-results/:id/review', requireSameOrigin, requireClinical
 app.get('/api/staff/follow-ups', requireClinicalStaff, asyncRoute(async (req, res) => {
   const result = await pool.query(
         `SELECT r.id, r.pet_id AS "petId", r.record_type AS "recordType",
-          r.summary, r.follow_up_at AS "followUpAt",
+          r.summary, r.created_at AS "recordCreatedAt", r.follow_up_at AS "followUpAt",
           p.name AS "petName", p.species, o.full_name AS "ownerName"
      FROM clinical_records r
      JOIN pets p ON p.id = r.pet_id
      JOIN users o ON o.id = p.owner_id
-     WHERE r.follow_up_at IS NOT NULL AND ($1 = 'admin' OR r.doctor_id = $2)
+     WHERE r.follow_up_at IS NOT NULL AND r.follow_up_completed_at IS NULL
+       AND ($1 = 'admin' OR r.doctor_id = $2)
      ORDER BY r.follow_up_at ASC
      LIMIT 500`,
     [req.user.role, req.user.id],
   );
   res.json({ followUps: result.rows });
+}));
+
+app.patch('/api/staff/follow-ups/:id/complete', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `UPDATE clinical_records
+     SET follow_up_completed_at = now(), updated_at = now()
+     WHERE id = $1 AND follow_up_at IS NOT NULL AND follow_up_completed_at IS NULL
+       AND ($2 = 'admin' OR doctor_id = $3)
+     RETURNING id, follow_up_completed_at AS "completedAt"`,
+    [req.params.id, req.user.role, req.user.id],
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'That active follow-up was not found.' });
+  return res.json({ followUp: result.rows[0] });
 }));
 
 app.get('/api/staff/conversations', requireClinicalStaff, asyncRoute(async (req, res) => {
@@ -1399,7 +1483,7 @@ app.get('/api/staff/inventory', requireClinicalStaff, asyncRoute(async (_req, re
 
 app.put('/api/staff/inventory/:id', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
   const quantity = req.body?.quantity;
-  if (!validText(req.params.id, 100) || !Number.isInteger(quantity) || quantity < 0 || quantity > 1000000) {
+  if (!productCatalog.has(req.params.id) || !Number.isInteger(quantity) || quantity < 0 || quantity > 1000000) {
     return res.status(400).json({ error: 'Enter a valid product and stock quantity.' });
   }
   const result = await pool.query(
@@ -1577,7 +1661,7 @@ app.patch('/api/staff/orders/:id/status', requireSameOrigin, requireClinicalStaf
     await client.query('BEGIN');
     transactionOpen = true;
     const currentResult = await client.query(
-      'SELECT id, status, fulfillment_method FROM orders WHERE id = $1 FOR UPDATE',
+      'SELECT id, status, fulfillment_method, stock_reserved FROM orders WHERE id = $1 FOR UPDATE',
       [req.params.id],
     );
     const current = currentResult.rows[0];
@@ -1593,8 +1677,31 @@ app.patch('/api/staff/orders/:id/status', requireSameOrigin, requireClinicalStaf
       return res.status(409).json({ error: 'This order can no longer be moved to that status.' });
     }
 
+    if (nextStatus === 'cancelled' && current.stock_reserved) {
+      const itemsResult = await client.query(
+        `SELECT product_id, SUM(quantity)::integer AS quantity
+         FROM order_items
+         WHERE order_id = $1
+         GROUP BY product_id
+         ORDER BY product_id`,
+        [current.id],
+      );
+      for (const item of itemsResult.rows) {
+        await client.query(
+          `INSERT INTO inventory_stock (product_id, quantity)
+           VALUES ($1, $2)
+           ON CONFLICT (product_id) DO UPDATE
+             SET quantity = inventory_stock.quantity + EXCLUDED.quantity, updated_at = now()`,
+          [item.product_id, item.quantity],
+        );
+      }
+    }
+
     const result = await client.query(
-      `UPDATE orders SET status = $2, updated_at = NOW()
+      `UPDATE orders
+       SET status = $2,
+           stock_reserved = CASE WHEN $2 = 'cancelled' THEN false ELSE stock_reserved END,
+           updated_at = NOW()
        WHERE id = $1
        RETURNING id, status`,
       [req.params.id, nextStatus],

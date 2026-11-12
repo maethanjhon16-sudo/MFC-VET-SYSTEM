@@ -362,7 +362,17 @@ function UpcomingAppointments({ nav }: { nav: OwnerNav }) {
   );
 }
 
-export function OwnerHome({ nav, ownerName, enabledServiceIds }: { nav: OwnerNav; ownerName: string; enabledServiceIds: string[] }) {
+export function OwnerHome({
+  nav,
+  ownerName,
+  enabledServiceIds,
+  stockLevels,
+}: {
+  nav: OwnerNav;
+  ownerName: string;
+  enabledServiceIds: string[];
+  stockLevels: Record<string, number>;
+}) {
   const enabledServices = SERVICES.filter((service) => enabledServiceIds.includes(service.id));
 
   return (
@@ -459,7 +469,7 @@ export function OwnerHome({ nav, ownerName, enabledServiceIds }: { nav: OwnerNav
 
       <RailSection title="Recommended for your pets" linkLabel="Visit shop" onLink={() => nav.shop()}>
         {productsByIds(HOME_RECOMMENDED).map((p) => (
-          <ProductCard key={p.id} product={p} width={236} onOpen={() => nav.product(p.id)} />
+          <ProductCard key={p.id} product={p} width={236} stockCount={stockLevels[p.id]} onOpen={() => nav.product(p.id)} />
         ))}
       </RailSection>
     </div>

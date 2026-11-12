@@ -75,7 +75,7 @@ export function RailSection({ title, subtitle, linkLabel, onLink, children }: Ra
   );
 }
 
-export function ProductCard({ product, width, onOpen }: { product: Product; width: number; onOpen: () => void }) {
+export function ProductCard({ product, width, stockCount, onOpen }: { product: Product; width: number; stockCount?: number; onOpen: () => void }) {
   return (
     <button type="button" className={styles.product} style={{ width }} onClick={onOpen}>
       <Photo emoji={product.emoji} tone={product.tone} size={64} width="100%" height={150} />
@@ -86,6 +86,7 @@ export function ProductCard({ product, width, onOpen }: { product: Product; widt
           {product.rating.toFixed(1)}
         </span>
         <span className={styles.productPrice}>{formatPeso(product.price)}</span>
+        {stockCount !== undefined && <span className={stockCount > 0 ? styles.stockAvailable : styles.stockUnavailable}>{stockCount > 0 ? `${stockCount} in stock` : 'Out of stock'}</span>}
       </span>
     </button>
   );

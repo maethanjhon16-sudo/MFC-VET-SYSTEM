@@ -160,6 +160,7 @@ interface DoctorState {
   message: string;
   appointmentsLoading: boolean;
   appointmentsError: string | null;
+  clinicalDataError: string | null;
   patientsLoading: boolean;
   patientsError: string | null;
   savingAppointmentId: string | null;
@@ -180,6 +181,7 @@ type DoctorAction =
   | { type: 'PATIENTS_LOADED'; patients: DoctorPatient[] }
   | { type: 'PATIENTS_FAILED'; message: string }
   | { type: 'CLINICAL_DATA_LOADED'; labResults: ApiLabResult[]; followUps: StaffFollowUp[] }
+  | { type: 'CLINICAL_DATA_FAILED'; message: string }
   | { type: 'SAVING_APPOINTMENT'; id: string }
   | { type: 'APPOINTMENT_DECIDED'; id: string; status: 'Confirmed' | 'Declined' }
   | { type: 'APPOINTMENT_ACTION_FAILED'; message: string }
@@ -204,6 +206,7 @@ function createInitialState(doctorName: string): DoctorState {
     message: '',
     appointmentsLoading: true,
     appointmentsError: null,
+    clinicalDataError: null,
     patientsLoading: true,
     patientsError: null,
     savingAppointmentId: null,
@@ -244,7 +247,9 @@ function doctorReducer(state: DoctorState, action: DoctorAction): DoctorState {
     case 'PATIENTS_FAILED':
       return { ...state, patientsLoading: false, patientsError: action.message };
     case 'CLINICAL_DATA_LOADED':
-      return { ...state, labResults: action.labResults, followUps: action.followUps };
+      return { ...state, labResults: action.labResults, followUps: action.followUps, clinicalDataError: null };
+    case 'CLINICAL_DATA_FAILED':
+      return { ...state, clinicalDataError: action.message };
     case 'SAVING_APPOINTMENT':
       return { ...state, savingAppointmentId: action.id, appointmentsError: null };
     case 'APPOINTMENT_DECIDED':
@@ -340,7 +345,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
       dispatch({ type: 'CLINICAL_DATA_LOADED', labResults, followUps });
     } catch (error) {
       dispatch({
-        type: 'APPOINTMENTS_FAILED',
+        type: 'CLINICAL_DATA_FAILED',
         message: error instanceof Error ? error.message : 'Could not load clinical reminders.',
       });
     }
@@ -499,6 +504,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
         <div className={styles.content}>
           {state.message && <div className={styles.message} role="status">{state.message}<button type="button" aria-label="Dismiss message" onClick={() => dispatch({ type: 'CLEAR_MESSAGE' })}>×</button></div>}
           {state.appointmentsError && <div className={styles.message} role="alert">{state.appointmentsError}<button type="button" aria-label="Retry loading appointments" onClick={() => void loadSchedule()}>↻</button></div>}
+          {state.clinicalDataError && <div className={styles.message} role="alert">{state.clinicalDataError}<button type="button" aria-label="Retry loading clinical reminders" onClick={() => void loadClinicalData()}>↻</button></div>}
 
           {state.view === 'dashboard' && (
             <>
@@ -660,7 +666,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
           {(['records', 'labs', 'follow-ups', 'inbox', 'services', 'inventory', 'orders', 'profile', 'availability', 'settings'] as const).includes(state.view as DoctorAuxiliaryView) && (
             <DoctorWorkspacePages
               view={state.view as DoctorAuxiliaryView}
-              doctorName={doctorName}
+              doctorName={state.doctorName}
               patients={state.patients}
               appointments={state.appointments}
               onNavigate={navigate}

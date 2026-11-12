@@ -16,6 +16,7 @@
 .btn:focus-visible, .chip:focus-visible { outline: 3px solid rgba(115, 88, 181, 0.45); outline-offset: 2px; }
 .btnPrimary { background: var(--color-forest); color: var(--color-white); box-shadow: var(--shadow-cta); }
 .btnPrimary:hover { background: #1a4430; }
+.btn:disabled { cursor: not-allowed; opacity: .5; }
 .btnSecondary { background: var(--color-white); color: var(--color-forest); border-color: var(--color-line); }
 .btnSecondary:hover { border-color: var(--color-sagemid); }
 .btnWhite { background: var(--color-white); color: var(--color-forest); }
@@ -186,6 +187,7 @@
 .ratingRow span { font-size: 13px; font-weight: 500; color: var(--color-mute); }
 .productTitle { margin: 0; font-size: 34px; font-weight: 800; line-height: normal; color: var(--color-ink); }
 .bigPrice { font-size: 38px; font-weight: 800; line-height: normal; color: var(--color-forest); }
+.stockNotice { margin: -10px 0 0; color: var(--color-mute); font-size: 12px; font-weight: 700; }
 .sizes { display: flex; flex-direction: column; gap: 10px; }
 .sizes b { font-size: 12px; font-weight: 700; color: var(--color-ink); }
 .qtyRow { display: flex; align-items: center; gap: 14px; width: 100%; }
