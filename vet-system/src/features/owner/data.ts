@@ -1,4 +1,4 @@
-import type { Doctor, Product, ProductCategory, Service, ServiceCategory, Tone } from './types';
+import type { Product, ProductCategory, Service, ServiceCategory, Tone } from './types';
 
 /** Gradient pairs used by the emoji "photos" in the design (top → bottom). */
 export const TONES: Record<Tone, [string, string]> = {
@@ -10,31 +10,6 @@ export const TONES: Record<Tone, [string, string]> = {
   sage: ['#e3ede2', '#a9c4ae'],
   rose: ['#fbe3ea', '#efb8c8'],
 };
-
-export const OWNER = { name: 'Maria Santos', emoji: '🧑🏻' };
-
-export const DOCTORS: Doctor[] = [
-  { id: 'reyes', name: 'Dr. Andrea Reyes', specialty: 'Small Animal Medicine', emoji: '🩺' },
-  { id: 'cruz', name: 'Dr. Paolo Cruz', specialty: 'Surgery & Internal Med', emoji: '👨🏽‍⚕️' },
-  { id: 'ramos', name: 'Dr. Lina Ramos', specialty: 'Dermatology', emoji: '👩🏻‍⚕️' },
-];
-
-export const PETS = [
-  { id: 'bella', name: 'Bella', info: 'Golden Retriever · 3 yrs', emoji: '🐶', tone: 'sand' as Tone, status: 'Healthy', statusTone: 'ok' as const },
-  { id: 'milo', name: 'Milo', info: 'Persian Cat · 2 yrs', emoji: '🐱', tone: 'lav' as Tone, status: 'Vaccine due', statusTone: 'warn' as const },
-  { id: 'coco', name: 'Coco', info: 'Shih Tzu · 5 yrs', emoji: '🐕', tone: 'sand' as Tone, status: 'Follow-up', statusTone: 'lav' as const },
-];
-
-export const APPOINTMENTS = [
-  { id: 'a1', month: 'OCT', day: '22', title: 'Bella · Annual Check-up', doctor: 'Dr. Andrea Reyes', time: '9:30 AM', status: 'Confirmed', statusTone: 'sky' as const },
-  { id: 'a2', month: 'OCT', day: '29', title: 'Milo · Vaccination', doctor: 'Dr. Paolo Cruz', time: '2:00 PM', status: 'Pending', statusTone: 'warn' as const },
-];
-
-export const MEDICAL_UPDATES = [
-  { id: 'u1', icon: 'pill', tone: 'okbg', title: 'Rabies booster recorded', meta: 'Bella · Oct 10, 2026', target: 'Vaccination History' },
-  { id: 'u2', icon: 'flask', tone: 'lav', title: 'CBC results ready', meta: 'Coco · Oct 8, 2026', target: 'Prescriptions & Lab Results' },
-  { id: 'u3', icon: 'file', tone: 'sky', title: 'Otic drops prescribed', meta: 'Bella · Oct 10, 2026', target: 'Prescriptions & Lab Results' },
-] as const;
 
 export const SERVICE_CHIPS: { key: ServiceCategory | 'all'; label: string }[] = [
   { key: 'all', label: 'All services' },
@@ -50,7 +25,7 @@ export const SERVICES: Service[] = [
     headline: 'Check-ups, diagnosis & expert advice',
     description: 'A complete physical examination by a licensed veterinarian. We review your pet’s history, weight, vitals and behavior, then recommend a clear treatment or preventive plan — all recorded in your pet’s profile.',
     includes: ['Full physical examination', 'Weight & vital signs check', 'Diagnosis and treatment plan', 'Prescription, if needed', 'Records added to pet profile', 'Follow-up instructions'],
-    doctorIds: ['reyes', 'cruz', 'ramos'], visit: '30–45 minutes per visit', nextSlot: 'Oct 22 · 9:30 AM',
+    visit: '30–45 minutes per visit',
   },
   {
     id: 'vaccination', name: 'Vaccination', blurb: 'Core & optional vaccines', emoji: '💉', tone: 'sky', duration: '15 min',
@@ -58,7 +33,7 @@ export const SERVICES: Service[] = [
     headline: 'Core & optional vaccines, on schedule',
     description: 'Keep your pet protected with age-appropriate core and optional vaccines. We check your pet’s vaccination history, administer the dose and update the digital record so reminders are never missed.',
     includes: ['Pre-vaccine health screening', 'Core vaccines (rabies, distemper)', 'Optional vaccines on request', 'Vaccination card update', 'Booster reminders', 'Post-vaccine care tips'],
-    doctorIds: ['reyes', 'cruz'], visit: '15–20 minutes per visit', nextSlot: 'Oct 23 · 10:00 AM',
+    visit: '15–20 minutes per visit',
   },
   {
     id: 'deworming', name: 'Deworming', blurb: 'Safe parasite control', emoji: '🐛', tone: 'mint', duration: '15 min',
@@ -66,7 +41,7 @@ export const SERVICES: Service[] = [
     headline: 'Safe, effective parasite control',
     description: 'Routine deworming protects your pet — and your family — from intestinal parasites. Dosage is matched to your pet’s weight and age, with a schedule for the next treatment.',
     includes: ['Weight-based dosage', 'Fecal check, if advised', 'Safe oral medication', 'Next-dose schedule', 'Records added to pet profile'],
-    doctorIds: ['reyes', 'ramos'], visit: '15 minutes per visit', nextSlot: 'Oct 22 · 11:00 AM',
+    visit: '15 minutes per visit',
   },
   {
     id: 'confinement', name: 'Confinement', blurb: 'Overnight monitored care', emoji: '🛏️', tone: 'lav', duration: 'per night',
@@ -74,7 +49,7 @@ export const SERVICES: Service[] = [
     headline: 'Overnight, monitored recovery care',
     description: 'A calm, clean space for pets who need observation or recovery. Our team monitors vitals, administers medication and sends you updates through the app.',
     includes: ['Private, climate-controlled kennel', 'Vitals monitoring', 'Medication administration', 'Daily doctor rounds', 'Progress updates to owner'],
-    doctorIds: ['cruz', 'reyes'], visit: 'Admission any time during clinic hours', nextSlot: 'Today · 4:00 PM',
+    visit: 'Admission any time during clinic hours',
   },
   {
     id: 'surgery', name: 'Surgery', blurb: 'Spay, neuter & procedures', emoji: '🏥', tone: 'rose', duration: '2–4 hrs',
@@ -82,7 +57,7 @@ export const SERVICES: Service[] = [
     headline: 'Spay, neuter & surgical procedures',
     description: 'Performed by our surgical team with pre-operative screening, anesthesia monitoring and post-operative care instructions, so your pet is comfortable from admission to recovery.',
     includes: ['Pre-operative screening', 'Anesthesia & monitoring', 'Surgical procedure', 'Post-operative pain relief', 'Recovery instructions', 'Follow-up check'],
-    doctorIds: ['cruz'], visit: '2–4 hours, plus recovery', nextSlot: 'Oct 25 · 8:00 AM',
+    visit: '2–4 hours, plus recovery',
   },
   {
     id: 'lab-test', name: 'Lab Test', blurb: 'Blood work & diagnostics', emoji: '🧪', tone: 'cream', duration: '1 day',
@@ -90,7 +65,7 @@ export const SERVICES: Service[] = [
     headline: 'Blood work & diagnostics',
     description: 'In-clinic diagnostics for clear answers: complete blood count, chemistry panels and more. Results are shared in your pet’s profile and reviewed with your doctor.',
     includes: ['Sample collection', 'Complete blood count (CBC)', 'Chemistry panel, if needed', 'Results in your pet’s profile', 'Doctor review of results'],
-    doctorIds: ['reyes', 'cruz'], visit: 'Results within 1 day', nextSlot: 'Oct 22 · 9:00 AM',
+    visit: 'Results within 1 day',
   },
   {
     id: 'home-service', name: 'Home Service', blurb: 'Vet visits at your door', emoji: '🏠', tone: 'sand', duration: '60 min',
@@ -98,7 +73,7 @@ export const SERVICES: Service[] = [
     headline: 'Vet visits at your door',
     description: 'For anxious pets or busy owners: a licensed veterinarian visits you at home for check-ups, vaccines and minor treatments within Kidapawan City.',
     includes: ['Home consultation', 'Vaccines & deworming on site', 'Minor treatments', 'Records updated on the spot', 'No clinic stress for your pet'],
-    doctorIds: ['reyes', 'ramos'], visit: '60 minutes per visit', nextSlot: 'Oct 24 · 1:00 PM',
+    visit: '60 minutes per visit',
   },
   {
     id: 'grooming', name: 'Grooming', blurb: 'Bath, trim & spa day', emoji: '🛁', tone: 'sky', duration: '90 min',
@@ -106,7 +81,7 @@ export const SERVICES: Service[] = [
     headline: 'Bath, trim & spa day',
     description: 'Gentle, vet-supervised grooming with pet-safe products. Includes a skin and coat check so small issues are caught early.',
     includes: ['Bath & blow-dry', 'Coat trim & brushing', 'Nail clipping', 'Ear cleaning', 'Skin & coat check'],
-    doctorIds: ['ramos'], visit: '90 minutes per visit', nextSlot: 'Oct 23 · 2:00 PM',
+    visit: '90 minutes per visit',
   },
 ];
 

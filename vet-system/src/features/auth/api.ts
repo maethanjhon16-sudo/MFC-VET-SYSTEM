@@ -76,6 +76,30 @@ export function register(input: {
   return request<{ user?: AuthUser; pendingApproval?: boolean }>('/api/auth/register', input);
 }
 
+export interface OwnerProfile {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  province: string | null;
+  city: string | null;
+  barangay: string | null;
+}
+
+export function getOwnerProfile() {
+  return request<{ profile: OwnerProfile }>('/api/owner/profile', undefined, 'GET');
+}
+
+export function updateOwnerProfile(input: {
+  fullName: string;
+  phone: string;
+  province: string;
+  city: string;
+  barangay: string;
+}) {
+  return request<{ profile: OwnerProfile }>('/api/owner/profile', input, 'PATCH');
+}
+
 export function logout() {
   return request<void>('/api/auth/logout');
 }
@@ -138,6 +162,52 @@ export function createOwnerPet(input: {
   dateOfBirth: string | null;
 }) {
   return request<{ pet: OwnerPet }>('/api/owner/pets', input);
+}
+
+export function updateOwnerPet(id: string, input: {
+  name: string;
+  species: PetSpecies;
+  breed: string;
+  dateOfBirth: string | null;
+}) {
+  return request<{ pet: OwnerPet }>(`/api/owner/pets/${encodeURIComponent(id)}`, input, 'PATCH');
+}
+
+export interface OwnerMedicalRecord {
+  id: string;
+  petId: string;
+  appointmentId: string | null;
+  recordType: string;
+  summary: string;
+  diagnosis: string;
+  treatment: string;
+  followUpAt: string | null;
+  createdAt: string;
+  petName: string;
+  species: PetSpecies;
+  doctorName: string;
+}
+
+export interface OwnerLabResult {
+  id: string;
+  petId: string;
+  appointmentId: string | null;
+  testName: string;
+  status: 'pending' | 'in_lab' | 'ready' | 'reviewed';
+  resultText: string;
+  requestedAt: string;
+  reviewedAt: string | null;
+  petName: string;
+  species: PetSpecies;
+  doctorName: string;
+}
+
+export function getOwnerMedicalRecords() {
+  return request<{ records: OwnerMedicalRecord[]; labResults: OwnerLabResult[] }>(
+    '/api/owner/medical-records',
+    undefined,
+    'GET',
+  );
 }
 
 export type AppointmentStatus = 'pending' | 'confirmed' | 'declined' | 'cancelled';
@@ -288,6 +358,34 @@ export interface StaffMessage {
   readAt: string | null;
 }
 
+export interface OwnerConversation {
+  id: string;
+  petId: string;
+  doctorId: string;
+  petName: string;
+  doctorName: string;
+  updatedAt: string;
+  latestMessage: string | null;
+  latestMessageAt: string | null;
+  unreadCount: number;
+}
+
+export function getOwnerConversations() {
+  return request<{ conversations: OwnerConversation[] }>('/api/owner/conversations', undefined, 'GET');
+}
+
+export function startOwnerConversation(input: { petId: string; doctorId: string; body: string }) {
+  return request<{ conversationId: string; message: StaffMessage }>('/api/owner/conversations', input);
+}
+
+export function getOwnerConversationMessages(id: string) {
+  return request<{ messages: StaffMessage[] }>(`/api/owner/conversations/${encodeURIComponent(id)}/messages`, undefined, 'GET');
+}
+
+export function sendOwnerMessage(id: string, body: string) {
+  return request<{ message: StaffMessage }>(`/api/owner/conversations/${encodeURIComponent(id)}/messages`, { body });
+}
+
 export function getStaffConversations() {
   return request<{ conversations: StaffConversation[] }>('/api/staff/conversations', undefined, 'GET');
 }
@@ -384,14 +482,40 @@ export interface StaffOrder {
   id: string;
   status: 'new' | 'preparing' | 'out_for_delivery' | 'delivered' | 'cancelled';
   paymentMethod: string;
+  fulfillmentMethod: 'clinic_pickup' | 'delivery';
+  deliveryAddress: string;
+  contactPhone: string;
   totalAmount: string;
   createdAt: string;
   customerName: string;
   items: { productId: string; productName: string; quantity: number; unitPrice: string }[];
 }
 
+export interface OwnerOrder extends Omit<StaffOrder, 'customerName'> {}
+
+export function getOwnerOrders() {
+  return request<{ orders: OwnerOrder[] }>('/api/owner/orders', undefined, 'GET');
+}
+
+export function createOwnerOrder(input: {
+  items: { productId: string; sizeIndex: number; quantity: number }[];
+  fulfillmentMethod: 'clinic_pickup' | 'delivery';
+  deliveryAddress: string;
+  contactPhone: string;
+}) {
+  return request<{ order: { id: string; status: OwnerOrder['status']; totalAmount: number } }>('/api/owner/orders', input);
+}
+
 export function getStaffOrders() {
   return request<{ orders: StaffOrder[] }>('/api/staff/orders', undefined, 'GET');
+}
+
+export function updateStaffOrderStatus(id: string, status: StaffOrder['status']) {
+  return request<{ order: Pick<StaffOrder, 'id' | 'status'> }>(
+    `/api/staff/orders/${encodeURIComponent(id)}/status`,
+    { status },
+    'PATCH',
+  );
 }
 
 export function getStaffDoctors() {

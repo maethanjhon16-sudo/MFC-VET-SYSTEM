@@ -8,6 +8,8 @@ import path from 'node:path';
 import { databaseTargetFingerprint, ensureSchema, pool } from './database.js';
 import { hashPassword, verifyPassword } from './passwords.js';
 import { appointmentServices, isValidAppointmentTime, isWithinDoctorAvailability } from './appointmentRules.js';
+import { canTransitionOrderStatus } from './orderRules.js';
+import { productCatalog } from './productCatalog.js';
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -192,6 +194,9 @@ async function staffPetAccess(req, petId) {
          SELECT 1 FROM appointments a
          WHERE a.pet_id = p.id AND a.doctor_id = $3
            AND a.status IN ('pending', 'confirmed')
+       ) OR EXISTS (
+         SELECT 1 FROM doctor_conversations c
+         WHERE c.pet_id = p.id AND c.owner_id = p.owner_id AND c.doctor_id = $3
        ))`,
     [petId, req.user.role, req.user.id],
   );
@@ -470,6 +475,36 @@ app.get('/api/owner/doctors', requireOwner, asyncRoute(async (_req, res) => {
   });
 }));
 
+app.get('/api/owner/profile', requireOwner, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `SELECT id, full_name AS "fullName", email, phone, province, city, barangay
+     FROM users WHERE id = $1 AND role = 'owner'`,
+    [req.user.id],
+  );
+  res.json({ profile: result.rows[0] ?? null });
+}));
+
+app.patch('/api/owner/profile', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
+  const body = req.body ?? {};
+  const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : '';
+  const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
+  const province = typeof body.province === 'string' ? body.province.trim() : '';
+  const city = typeof body.city === 'string' ? body.city.trim() : '';
+  const barangay = typeof body.barangay === 'string' ? body.barangay.trim() : '';
+  if (!validText(fullName, 120) || phone.length > 32 || province.length > 120 || city.length > 120 || barangay.length > 120) {
+    return res.status(400).json({ error: 'Enter a name and valid contact or address details.' });
+  }
+  const result = await pool.query(
+    `UPDATE users
+     SET full_name = $2, phone = $3, province = $4, city = $5, barangay = $6
+     WHERE id = $1 AND role = 'owner'
+     RETURNING id, full_name AS "fullName", email, phone, province, city, barangay`,
+    [req.user.id, fullName, phone, province || null, city || null, barangay || null],
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'Your owner profile could not be found.' });
+  return res.json({ profile: result.rows[0] });
+}));
+
 app.get('/api/owner/pets', requireOwner, asyncRoute(async (req, res) => {
   const result = await pool.query(
     `SELECT id, name, species, breed, date_of_birth, created_at
@@ -488,6 +523,75 @@ app.get('/api/owner/pets', requireOwner, asyncRoute(async (req, res) => {
       createdAt: row.created_at,
     })),
   });
+}));
+
+app.patch('/api/owner/pets/:id', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
+  const body = req.body ?? {};
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const species = body.species;
+  const breed = typeof body.breed === 'string' ? body.breed.trim() : '';
+  const dateOfBirth = body.dateOfBirth === '' ? null : body.dateOfBirth ?? null;
+  if (!validText(name, 80)) return res.status(400).json({ error: 'Enter a pet name (up to 80 characters).' });
+  if (!['Dog', 'Cat', 'Bird', 'Rabbit', 'Other'].includes(species)) {
+    return res.status(400).json({ error: 'Choose a valid pet species.' });
+  }
+  if (typeof body.breed !== 'string' || breed.length > 80) {
+    return res.status(400).json({ error: 'Breed must be 80 characters or fewer.' });
+  }
+  if (dateOfBirth !== null && (!validDateOnly(dateOfBirth) || dateOfBirth > manilaToday())) {
+    return res.status(400).json({ error: 'Enter a valid date of birth that is not in the future.' });
+  }
+  const result = await pool.query(
+    `UPDATE pets
+     SET name = $3, species = $4, breed = $5, date_of_birth = $6
+     WHERE id = $1 AND owner_id = $2
+     RETURNING id, name, species, breed, date_of_birth, created_at`,
+    [req.params.id, req.user.id, name, species, breed, dateOfBirth],
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'That pet profile could not be found.' });
+  const row = result.rows[0];
+  return res.json({
+    pet: {
+      id: row.id,
+      name: row.name,
+      species: row.species,
+      breed: row.breed,
+      dateOfBirth: row.date_of_birth,
+      createdAt: row.created_at,
+    },
+  });
+}));
+
+app.get('/api/owner/medical-records', requireOwner, asyncRoute(async (req, res) => {
+  const [records, labResults] = await Promise.all([
+    pool.query(
+      `SELECT r.id, r.pet_id AS "petId", r.appointment_id AS "appointmentId",
+              r.record_type AS "recordType", r.summary, r.diagnosis, r.treatment,
+              r.follow_up_at AS "followUpAt", r.created_at AS "createdAt",
+              p.name AS "petName", p.species, d.full_name AS "doctorName"
+       FROM clinical_records r
+       JOIN pets p ON p.id = r.pet_id
+       JOIN users d ON d.id = r.doctor_id
+       WHERE p.owner_id = $1
+       ORDER BY r.created_at DESC
+       LIMIT 300`,
+      [req.user.id],
+    ),
+    pool.query(
+      `SELECT l.id, l.pet_id AS "petId", l.appointment_id AS "appointmentId",
+              l.test_name AS "testName", l.status, l.result_text AS "resultText",
+              l.requested_at AS "requestedAt", l.reviewed_at AS "reviewedAt",
+              p.name AS "petName", p.species, d.full_name AS "doctorName"
+       FROM lab_results l
+       JOIN pets p ON p.id = l.pet_id
+       JOIN users d ON d.id = l.doctor_id
+       WHERE p.owner_id = $1
+       ORDER BY l.requested_at DESC
+       LIMIT 300`,
+      [req.user.id],
+    ),
+  ]);
+  res.json({ records: records.rows, labResults: labResults.rows });
 }));
 
 app.post('/api/owner/pets', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
@@ -662,6 +766,226 @@ app.post('/api/owner/appointments/:id/cancel', requireSameOrigin, requireOwner, 
   );
   if (!result.rowCount) return res.status(404).json({ error: 'Only your pending appointment requests can be cancelled.' });
   return res.json({ cancelled: true });
+}));
+
+app.get('/api/owner/conversations', requireOwner, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `SELECT c.id, c.pet_id AS "petId", c.doctor_id AS "doctorId",
+            p.name AS "petName", d.full_name AS "doctorName",
+            c.updated_at AS "updatedAt",
+            latest.body AS "latestMessage", latest.created_at AS "latestMessageAt",
+            COALESCE(unread.count, 0)::integer AS "unreadCount"
+     FROM doctor_conversations c
+     JOIN pets p ON p.id = c.pet_id
+     JOIN users d ON d.id = c.doctor_id
+     LEFT JOIN LATERAL (
+       SELECT body, created_at FROM doctor_messages
+       WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1
+     ) latest ON true
+     LEFT JOIN LATERAL (
+       SELECT count(*) AS count FROM doctor_messages
+       WHERE conversation_id = c.id AND sender_id <> $1 AND read_at IS NULL
+     ) unread ON true
+     WHERE c.owner_id = $1
+     ORDER BY COALESCE(latest.created_at, c.updated_at) DESC
+     LIMIT 200`,
+    [req.user.id],
+  );
+  res.json({ conversations: result.rows });
+}));
+
+app.post('/api/owner/conversations', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
+  const { petId, doctorId, body } = req.body ?? {};
+  if (
+    typeof petId !== 'string' || !/^[0-9a-f-]{36}$/i.test(petId)
+    || typeof doctorId !== 'string' || !/^[0-9a-f-]{36}$/i.test(doctorId)
+    || !validText(body, 2000)
+  ) {
+    return res.status(400).json({ error: 'Choose your pet and a veterinarian, then enter a message.' });
+  }
+  const petResult = await pool.query(
+    'SELECT id FROM pets WHERE id = $1 AND owner_id = $2',
+    [petId, req.user.id],
+  );
+  if (!petResult.rowCount) return res.status(404).json({ error: 'That pet profile could not be found in your account.' });
+  const doctorResult = await pool.query(
+    "SELECT id FROM users WHERE id = $1 AND role = 'doctor' AND status = 'active'",
+    [doctorId],
+  );
+  if (!doctorResult.rowCount) return res.status(404).json({ error: 'That veterinarian is not available.' });
+
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query('BEGIN');
+    transactionOpen = true;
+    const conversation = await client.query(
+      `INSERT INTO doctor_conversations (id, owner_id, doctor_id, pet_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (owner_id, doctor_id, pet_id)
+       DO UPDATE SET updated_at = now()
+       RETURNING id`,
+      [randomUUID(), req.user.id, doctorId, petId],
+    );
+    const message = await client.query(
+      `INSERT INTO doctor_messages (id, conversation_id, sender_id, body)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, sender_id AS "senderId", body, created_at AS "createdAt", read_at AS "readAt"`,
+      [randomUUID(), conversation.rows[0].id, req.user.id, body.trim()],
+    );
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return res.status(201).json({ conversationId: conversation.rows[0].id, message: message.rows[0] });
+  } catch (error) {
+    if (transactionOpen) await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}));
+
+app.get('/api/owner/conversations/:id/messages', requireOwner, asyncRoute(async (req, res) => {
+  const conversation = await pool.query(
+    'SELECT id FROM doctor_conversations WHERE id = $1 AND owner_id = $2',
+    [req.params.id, req.user.id],
+  );
+  if (!conversation.rowCount) return res.status(404).json({ error: 'That conversation was not found.' });
+  await pool.query(
+    `UPDATE doctor_messages SET read_at = now()
+     WHERE conversation_id = $1 AND sender_id <> $2 AND read_at IS NULL`,
+    [req.params.id, req.user.id],
+  );
+  const result = await pool.query(
+    `SELECT id, sender_id AS "senderId", body, created_at AS "createdAt", read_at AS "readAt"
+     FROM doctor_messages WHERE conversation_id = $1 ORDER BY created_at ASC`,
+    [req.params.id],
+  );
+  res.json({ messages: result.rows });
+}));
+
+app.post('/api/owner/conversations/:id/messages', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
+  const body = req.body?.body;
+  if (!validText(body, 2000)) return res.status(400).json({ error: 'Enter a message up to 2,000 characters.' });
+  const client = await pool.connect();
+  try {
+    const conversation = await client.query(
+      'SELECT id FROM doctor_conversations WHERE id = $1 AND owner_id = $2',
+      [req.params.id, req.user.id],
+    );
+    if (!conversation.rowCount) return res.status(404).json({ error: 'That conversation was not found.' });
+    const result = await client.query(
+      `INSERT INTO doctor_messages (id, conversation_id, sender_id, body)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, sender_id AS "senderId", body, created_at AS "createdAt", read_at AS "readAt"`,
+      [randomUUID(), req.params.id, req.user.id, body.trim()],
+    );
+    await client.query('UPDATE doctor_conversations SET updated_at = now() WHERE id = $1', [req.params.id]);
+    return res.status(201).json({ message: result.rows[0] });
+  } finally {
+    client.release();
+  }
+}));
+
+app.get('/api/owner/orders', requireOwner, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `SELECT o.id, o.status, o.payment_method AS "paymentMethod",
+            o.fulfillment_method AS "fulfillmentMethod",
+            o.delivery_address AS "deliveryAddress", o.contact_phone AS "contactPhone",
+            o.total_amount AS "totalAmount", o.created_at AS "createdAt",
+            COALESCE(json_agg(json_build_object(
+              'productId', i.product_id, 'productName', i.product_name,
+              'quantity', i.quantity, 'unitPrice', i.unit_price
+            ) ORDER BY i.product_name) FILTER (WHERE i.id IS NOT NULL), '[]'::json) AS items
+     FROM orders o
+     LEFT JOIN order_items i ON i.order_id = o.id
+     WHERE o.owner_id = $1
+     GROUP BY o.id
+     ORDER BY o.created_at DESC
+     LIMIT 100`,
+    [req.user.id],
+  );
+  res.json({ orders: result.rows });
+}));
+
+app.post('/api/owner/orders', requireSameOrigin, requireOwner, appointmentLimiter, asyncRoute(async (req, res) => {
+  const body = req.body ?? {};
+  const items = body.items;
+  const fulfillmentMethod = body.fulfillmentMethod;
+  const deliveryAddress = typeof body.deliveryAddress === 'string' ? body.deliveryAddress.trim() : '';
+  const contactPhone = typeof body.contactPhone === 'string' ? body.contactPhone.trim() : '';
+  if (!Array.isArray(items) || items.length === 0 || items.length > 50) {
+    return res.status(400).json({ error: 'Add between 1 and 50 products to your order.' });
+  }
+  if (!['clinic_pickup', 'delivery'].includes(fulfillmentMethod)) {
+    return res.status(400).json({ error: 'Choose clinic pickup or delivery.' });
+  }
+  if (fulfillmentMethod === 'delivery' && !validText(deliveryAddress, 500)) {
+    return res.status(400).json({ error: 'Enter a delivery address up to 500 characters.' });
+  }
+  if (!validText(contactPhone, 32)) return res.status(400).json({ error: 'Enter a contact phone number.' });
+
+  const orderItems = new Map();
+  for (const item of items) {
+    if (
+      typeof item?.productId !== 'string'
+      || !Number.isInteger(item.sizeIndex)
+      || !Number.isInteger(item.quantity)
+      || item.quantity < 1
+      || item.quantity > 20
+    ) {
+      return res.status(400).json({ error: 'One or more order items are invalid.' });
+    }
+    const product = productCatalog.get(item.productId);
+    const size = product?.sizes[item.sizeIndex];
+    if (!product || !size) return res.status(400).json({ error: 'One or more products are no longer available.' });
+    const key = `${item.productId}:${item.sizeIndex}`;
+    const existing = orderItems.get(key);
+    const quantity = (existing?.quantity ?? 0) + item.quantity;
+    if (quantity > 20) return res.status(400).json({ error: 'A product cannot exceed 20 units per order.' });
+    orderItems.set(key, {
+      productId: item.productId,
+      productName: `${product.name}${size.label === 'Standard' ? '' : ` · ${size.label}`}`,
+      quantity,
+      unitPrice: size.price,
+    });
+  }
+  const lines = [...orderItems.values()];
+  const total = lines.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  if (total <= 0 || total > 10000000) return res.status(400).json({ error: 'The order total is outside the allowed range.' });
+
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query('BEGIN');
+    transactionOpen = true;
+    const orderId = randomUUID();
+    const paymentMethod = fulfillmentMethod === 'delivery' ? 'cash_on_delivery' : 'pay_at_clinic';
+    await client.query(
+      `INSERT INTO orders (
+         id, owner_id, status, payment_method, fulfillment_method,
+         delivery_address, contact_phone, total_amount
+       ) VALUES ($1, $2, 'new', $3, $4, $5, $6, $7)`,
+      [
+        orderId, req.user.id, paymentMethod, fulfillmentMethod,
+        fulfillmentMethod === 'delivery' ? deliveryAddress : '', contactPhone, total,
+      ],
+    );
+    for (const item of lines) {
+      await client.query(
+        `INSERT INTO order_items (id, order_id, product_id, product_name, quantity, unit_price)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [randomUUID(), orderId, item.productId, item.productName, item.quantity, item.unitPrice],
+      );
+    }
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return res.status(201).json({ order: { id: orderId, status: 'new', totalAmount: total } });
+  } catch (error) {
+    if (transactionOpen) await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }));
 
 app.get('/api/staff/appointments', requireClinicalStaff, asyncRoute(async (req, res) => {
@@ -1149,6 +1473,8 @@ app.put('/api/staff/preferences', requireSameOrigin, requireClinicalStaff, async
 app.get('/api/staff/orders', requireClinicalStaff, asyncRoute(async (_req, res) => {
   const result = await pool.query(
         `SELECT o.id, o.status, o.payment_method AS "paymentMethod",
+          o.fulfillment_method AS "fulfillmentMethod",
+          o.delivery_address AS "deliveryAddress", o.contact_phone AS "contactPhone",
           o.total_amount AS "totalAmount", o.created_at AS "createdAt",
           u.full_name AS "customerName",
             COALESCE(json_agg(json_build_object(
@@ -1163,6 +1489,52 @@ app.get('/api/staff/orders', requireClinicalStaff, asyncRoute(async (_req, res) 
      LIMIT 500`,
   );
   res.json({ orders: result.rows });
+}));
+
+app.patch('/api/staff/orders/:id/status', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
+  const nextStatus = req.body?.status;
+  const allowedStatuses = ['new', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'];
+  if (!allowedStatuses.includes(nextStatus)) {
+    return res.status(400).json({ error: 'Choose a valid order status.' });
+  }
+
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query('BEGIN');
+    transactionOpen = true;
+    const currentResult = await client.query(
+      'SELECT id, status, fulfillment_method FROM orders WHERE id = $1 FOR UPDATE',
+      [req.params.id],
+    );
+    const current = currentResult.rows[0];
+    if (!current) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    if (!canTransitionOrderStatus(current.status, nextStatus, current.fulfillment_method)) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({ error: 'This order can no longer be moved to that status.' });
+    }
+
+    const result = await client.query(
+      `UPDATE orders SET status = $2, updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, status`,
+      [req.params.id, nextStatus],
+    );
+    await client.query('COMMIT');
+    transactionOpen = false;
+    res.json({ order: result.rows[0] });
+  } catch (error) {
+    if (transactionOpen) await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }));
 
 app.get('/api/staff/schedule', requireClinicalStaff, asyncRoute(async (req, res) => {

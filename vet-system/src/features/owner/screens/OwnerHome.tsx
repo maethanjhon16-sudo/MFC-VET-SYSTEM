@@ -1,10 +1,20 @@
-import { useEffect, useReducer, type FormEvent } from 'react';
+import { useEffect, useReducer, useState, type FormEvent } from 'react';
 import { Icon } from '../../../components/ui/Icon';
 import { Photo } from '../../../components/owner/Photo';
 import { ProductCard, RailSection, SectionHeader, ServiceMiniCard } from '../../../components/owner/OwnerParts';
 import { CLINIC_HOURS, getClinicGreeting } from '../../clinicInfo';
-import { createOwnerPet, getOwnerAppointments, getOwnerPets, type Appointment, type OwnerPet, type PetSpecies } from '../../auth/api';
-import { HOME_RECOMMENDED, MEDICAL_UPDATES, SERVICES, productsByIds } from '../data';
+import {
+  createOwnerPet,
+  getOwnerAppointments,
+  getOwnerMedicalRecords,
+  getOwnerPets,
+  type Appointment,
+  type OwnerLabResult,
+  type OwnerMedicalRecord,
+  type OwnerPet,
+  type PetSpecies,
+} from '../../auth/api';
+import { HOME_RECOMMENDED, SERVICES, productsByIds } from '../data';
 import type { OwnerNav } from '../types';
 import s from './Screens.module.css';
 
@@ -89,7 +99,7 @@ function isPetSpecies(value: string): value is PetSpecies {
   return ['Dog', 'Cat', 'Bird', 'Rabbit', 'Other'].includes(value);
 }
 
-function OwnerPets() {
+function OwnerPets({ nav }: { nav: OwnerNav }) {
   const [state, dispatch] = useReducer(petsReducer, {
     pets: [],
     loading: true,
@@ -159,6 +169,7 @@ function OwnerPets() {
             <span className={s.petName}>{pet.name}</span>
             <span className={s.petInfo}>{pet.species}{pet.breed ? ` · ${pet.breed}` : ''}</span>
             <span className={s.petInfo}>{petAge(pet.dateOfBirth)}</span>
+            <button type="button" className={s.petOpen} onClick={() => nav.pet(pet.id)}>View pet profile</button>
           </span>
         </article>
       ))}
@@ -183,6 +194,75 @@ function OwnerPets() {
         </form>
       )}
     </>
+  );
+}
+
+function RecentMedicalUpdates({ nav }: { nav: OwnerNav }) {
+  const [updates, setUpdates] = useState<Array<{
+    id: string;
+    petId: string;
+    petName: string;
+    title: string;
+    date: string;
+    icon: 'pill' | 'flask' | 'file';
+    tone: 'okbg' | 'lav' | 'sky';
+  }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getOwnerMedicalRecords().then(({ records, labResults }) => {
+      if (!active) return;
+      const entries = [
+        ...records.map((record: OwnerMedicalRecord) => ({
+          id: record.id,
+          petId: record.petId,
+          petName: record.petName,
+          title: record.summary || record.recordType,
+          date: record.createdAt,
+          icon: record.recordType.toLowerCase().includes('vaccine') ? 'pill' as const : 'file' as const,
+          tone: 'okbg' as const,
+        })),
+        ...labResults.map((result: OwnerLabResult) => ({
+          id: result.id,
+          petId: result.petId,
+          petName: result.petName,
+          title: result.status === 'ready' || result.status === 'reviewed' ? `${result.testName} results ready` : `${result.testName} in progress`,
+          date: result.reviewedAt ?? result.requestedAt,
+          icon: 'flask' as const,
+          tone: 'lav' as const,
+        })),
+      ];
+      setUpdates(entries.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)).slice(0, 3));
+      setError(null);
+    }).catch((loadError: unknown) => {
+      if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load medical updates.');
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, []);
+
+  return (
+    <section className={`${s.col} ${s.colFixed}`}>
+      <SectionHeader title="Recent medical updates" linkLabel="See all" onLink={() => nav.records()} />
+      {loading && <p className={s.empty}>Loading medical updates…</p>}
+      {error && <p className={s.petMessage} role="alert">{error}</p>}
+      {!loading && !error && updates.length === 0 && <p className={s.empty}>Medical records and test results will appear here after a clinic visit.</p>}
+      {updates.map((update) => (
+        <button key={update.id} type="button" className={`${s.card} ${s.row} ${s.rowSm}`} onClick={() => nav.records(update.petId)}>
+          <span className={s.updIcon} style={{ background: UPDATE_BG[update.tone] }}>
+            <Icon name={update.icon} size={20} />
+          </span>
+          <span className={`${s.info} ${s.infoSm}`}>
+            <b>{update.title}</b>
+            <span>{update.petName} · {new Date(update.date).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' })}</span>
+          </span>
+          <Icon name="chev-row" size={18} />
+        </button>
+      ))}
+    </section>
   );
 }
 
@@ -295,7 +375,7 @@ export function OwnerHome({ nav, ownerName }: { nav: OwnerNav; ownerName: string
           <p>Here’s what’s happening with your pets today.</p>
         </div>
         <div className={s.headerActions}>
-          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => nav.soon('Messages')}>
+          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={nav.messages}>
             <Icon name="chat-sm" size={18} />
             Message Doctor
           </button>
@@ -336,8 +416,8 @@ export function OwnerHome({ nav, ownerName }: { nav: OwnerNav; ownerName: string
       <div className={s.quick}>
         {[
           { title: 'Appointments', sub: 'Manage your visits', icon: 'quick-calendar', bg: 'var(--color-sage)', go: nav.appointments },
-          { title: 'Pet Records', sub: 'Medical history', icon: 'quick-file', bg: 'var(--color-lav)', go: () => nav.soon('Medical Records') },
-          { title: 'Messages', sub: '2 unread', icon: 'quick-chat', bg: 'var(--color-sky)', go: () => nav.soon('Messages') },
+          { title: 'Pet Records', sub: 'Medical history', icon: 'quick-file', bg: 'var(--color-lav)', go: () => nav.records() },
+          { title: 'Messages', sub: 'Chat with the clinic', icon: 'quick-chat', bg: 'var(--color-sky)', go: nav.messages },
           { title: 'Shop', sub: 'Food & supplies', icon: 'quick-bag', bg: 'var(--color-cream)', go: () => nav.shop() },
         ].map((q) => (
           <button key={q.title} type="button" className={`${s.card} ${s.quickCard}`} onClick={q.go}>
@@ -354,27 +434,13 @@ export function OwnerHome({ nav, ownerName }: { nav: OwnerNav; ownerName: string
 
       <div id="owner-pets">
         <RailSection title="My Pets">
-          <OwnerPets />
+          <OwnerPets nav={nav} />
         </RailSection>
       </div>
 
       <div className={s.twoCol}>
         <UpcomingAppointments nav={nav} />
-        <section className={`${s.col} ${s.colFixed}`}>
-          <SectionHeader title="Recent medical updates" linkLabel="See all" onLink={() => nav.soon('Medical Records')} />
-          {MEDICAL_UPDATES.map((u) => (
-            <button key={u.id} type="button" className={`${s.card} ${s.row} ${s.rowSm}`} onClick={() => nav.soon(u.target)}>
-              <span className={s.updIcon} style={{ background: UPDATE_BG[u.tone] }}>
-                <Icon name={u.icon} size={20} />
-              </span>
-              <span className={`${s.info} ${s.infoSm}`}>
-                <b>{u.title}</b>
-                <span>{u.meta}</span>
-              </span>
-              <Icon name="chev-row" size={18} />
-            </button>
-          ))}
-        </section>
+        <RecentMedicalUpdates nav={nav} />
       </div>
 
       <RailSection

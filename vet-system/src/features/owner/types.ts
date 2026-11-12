@@ -5,6 +5,14 @@ export type OwnerScreen =
   | 'service-details'
   | 'appointment-booking'
   | 'owner-appointments'
+  | 'owner-pet-profile'
+  | 'owner-records'
+  | 'owner-messages'
+  | 'owner-cart'
+  | 'owner-orders'
+  | 'owner-profile'
+  | 'owner-notifications'
+  | 'owner-help'
   | 'owner-shop'
   | 'product-details'
   | 'coming-soon';
@@ -15,13 +23,6 @@ export type Tone = 'sand' | 'lav' | 'cream' | 'mint' | 'sky' | 'sage' | 'rose';
 
 export type ServiceCategory = 'preventive' | 'treatment' | 'comfort';
 export type ProductCategory = 'cat-food' | 'dog-food' | 'vitamins' | 'grooming' | 'accessories' | 'toys';
-
-export interface Doctor {
-  id: string;
-  name: string;
-  specialty: string;
-  emoji: string;
-}
 
 export interface Service {
   id: string;
@@ -36,9 +37,7 @@ export interface Service {
   headline: string;
   description: string;
   includes: string[];
-  doctorIds: string[];
   visit: string;
-  nextSlot: string;
 }
 
 export interface ProductSize {
@@ -67,16 +66,22 @@ export interface CartLine {
   qty: number;
 }
 
-/** Navigation helpers every screen receives. Anything outside this section opens a "coming soon" page. */
 export interface OwnerNav {
   home: () => void;
   services: (chip?: ServiceCategory | 'all') => void;
   service: (id: string) => void;
   shop: (chip?: ProductCategory | 'all') => void;
   product: (id: string) => void;
-  book: (serviceId?: string) => void;
+  book: (serviceId?: string, petId?: string) => void;
   appointments: () => void;
-  /** Frames that belong to other sections of the Figma file (Schedule, Cart, Messages, …). */
+  pet: (id: string) => void;
+  records: (petId?: string) => void;
+  messages: () => void;
+  cart: () => void;
+  orders: () => void;
+  profile: () => void;
+  notifications: () => void;
+  help: () => void;
   soon: (label: string) => void;
 }
 

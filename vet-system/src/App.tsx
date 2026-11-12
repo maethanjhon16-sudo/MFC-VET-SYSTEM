@@ -17,6 +17,7 @@ type AppAction =
   | { type: 'SESSION_READY'; destination: ExitDestination | null; user: AuthUser | null }
   | { type: 'SESSION_FAILED'; message: string }
   | { type: 'ENTER'; user: AuthUser }
+  | { type: 'UPDATE_USER_NAME'; fullName: string }
   | { type: 'SIGN_OUT'; notice?: string };
 
 function destinationFor(user: AuthUser | null): ExitDestination | null {
@@ -34,6 +35,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { destination: null, user: null, checkingSession: false, notice: action.message };
     case 'ENTER':
       return { destination: destinationFor(action.user), user: action.user, checkingSession: false, notice: null };
+    case 'UPDATE_USER_NAME':
+      return state.user ? { ...state, user: { ...state.user, fullName: action.fullName } } : state;
     case 'SIGN_OUT':
       return { destination: null, user: null, checkingSession: false, notice: action.notice ?? null };
     default:
@@ -106,7 +109,14 @@ export function App() {
 
   // Page 2 of the Figma file: Pet Owner — Home, Services & Shop.
   if (state.destination === 'owner-home' && state.user?.role === 'owner') {
-    return <OwnerFlow ownerName={state.user.fullName} onSignOut={signOut} />;
+    return (
+      <OwnerFlow
+        ownerId={state.user.id}
+        ownerName={state.user.fullName}
+        onOwnerNameUpdated={(fullName) => dispatch({ type: 'UPDATE_USER_NAME', fullName })}
+        onSignOut={signOut}
+      />
+    );
   }
   if (state.destination === 'doctor-dashboard' && state.user?.role === 'doctor') {
     return <DoctorFlow doctorName={state.user.fullName} onSignOut={signOut} />;

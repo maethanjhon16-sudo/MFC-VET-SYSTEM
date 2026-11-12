@@ -145,18 +145,20 @@ function bookingReducer(state: BookingState, action: BookingAction): BookingStat
 
 export function AppointmentBooking({
   serviceId,
+  initialPetId = '',
   onCancel,
   onBooked,
   onManagePets,
 }: {
   serviceId: string;
+  initialPetId?: string;
   onCancel: () => void;
   onBooked: () => void;
   onManagePets: () => void;
 }) {
   const service = getService(serviceId);
   const [state, dispatch] = useReducer(bookingReducer, {
-    petId: '',
+    petId: initialPetId,
     serviceId: service.id,
     doctorId: '',
     date: manilaDate(1),
