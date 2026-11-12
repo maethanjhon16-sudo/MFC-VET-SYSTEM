@@ -144,6 +144,7 @@ type WorkspaceAction =
   | { type: 'LAB_UPDATED'; labResult: ApiLabResult }
   | { type: 'LAB_REVIEWED'; labResult: Pick<ApiLabResult, 'id' | 'status' | 'reviewedAt'> }
   | { type: 'FOLLOW_UP_COMPLETED'; id: string }
+  | { type: 'FOLLOW_UP_CREATED'; followUp: StaffFollowUp }
   | { type: 'FOLLOW_UPS_RELOADED'; followUps: StaffFollowUp[] }
   | { type: 'SERVICE_UPDATED'; service: ClinicServiceSetting }
   | { type: 'INVENTORY_UPDATED'; item: InventoryItem }
@@ -280,6 +281,8 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
       return { ...state, labResults: state.labResults.map((item) => item.id === action.labResult.id ? { ...item, ...action.labResult } : item), saving: false, actionError: null, notice: 'Lab result marked reviewed.' };
     case 'FOLLOW_UP_COMPLETED':
       return { ...state, followUps: state.followUps.filter((item) => item.id !== action.id), saving: false, actionError: null, notice: 'Follow-up marked complete.' };
+    case 'FOLLOW_UP_CREATED':
+      return { ...state, followUps: [action.followUp, ...state.followUps], saving: false, actionError: null, notice: 'Follow-up saved and shared with the pet owner.' };
     case 'FOLLOW_UPS_RELOADED':
       return { ...state, followUps: action.followUps, saving: false, actionError: null, notice: 'Follow-up saved and shared with the pet owner.' };
     case 'SERVICE_UPDATED':
@@ -677,8 +680,9 @@ export function DoctorWorkspacePages({
     setFollowUpFormError(null);
     dispatch({ type: 'SAVING', value: true });
     try {
+      let followUp: StaffFollowUp;
       if (followUpType === 'medicine') {
-        await createStaffFollowUp({
+        ({ followUp } = await createStaffFollowUp({
           type: 'medicine',
           petId,
           doctorId: followUpDoctorId,
@@ -686,25 +690,33 @@ export function DoctorWorkspacePages({
           medicineName: String(formData.get('medicineName') ?? '').trim(),
           medicineDose: String(formData.get('medicineDose') ?? '').trim(),
           medicineInstructions: String(formData.get('medicineInstructions') ?? '').trim(),
-        });
+        }));
       } else {
         if (!followUpTime) {
           setFollowUpFormError('Choose an available revisit time.');
           dispatch({ type: 'SAVING', value: false });
           return;
         }
-        await createStaffFollowUp({
+        ({ followUp } = await createStaffFollowUp({
           type: 'revisit',
           petId,
           doctorId: followUpDoctorId,
           summary,
           serviceId: followUpServiceId,
           scheduledAt: new Date(`${followUpDate}T${followUpTime}:00+08:00`).toISOString(),
+        }));
+      }
+      dispatch({ type: 'FOLLOW_UP_CREATED', followUp });
+      setFollowUpFormOpen(false);
+      try {
+        const { followUps } = await getStaffFollowUps();
+        dispatch({ type: 'FOLLOW_UPS_RELOADED', followUps });
+      } catch (refreshError) {
+        dispatch({
+          type: 'ACTION_FAILED',
+          message: `Follow-up was saved, but the list could not be refreshed: ${refreshError instanceof Error ? refreshError.message : 'try refreshing the page.'}`,
         });
       }
-      const { followUps } = await getStaffFollowUps();
-      dispatch({ type: 'FOLLOW_UPS_RELOADED', followUps });
-      setFollowUpFormOpen(false);
     } catch (error) {
       setFollowUpFormError(error instanceof Error ? error.message : 'Could not save this follow-up.');
       dispatch({ type: 'SAVING', value: false });
