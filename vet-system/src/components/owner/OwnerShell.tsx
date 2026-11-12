@@ -34,7 +34,8 @@ export function OwnerShell({ active, nav, cartCount, onSearch, query = '', child
     if (key === 'home') nav.home();
     else if (key === 'actions') nav.services();
     else if (key === 'shop') nav.shop();
-    else nav.soon(key === 'schedule' ? 'Owner Schedule' : 'Owner Menu');
+    else if (key === 'schedule') nav.appointments();
+    else nav.soon('Owner Menu');
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {

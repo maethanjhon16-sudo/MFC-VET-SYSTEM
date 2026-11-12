@@ -1,5 +1,13 @@
 /** One entry per frame in the Figma "2 · PET OWNER — Home, Services & Shop" section. */
-export type OwnerScreen = 'owner-home' | 'owner-services' | 'service-details' | 'owner-shop' | 'product-details' | 'coming-soon';
+export type OwnerScreen =
+  | 'owner-home'
+  | 'owner-services'
+  | 'service-details'
+  | 'appointment-booking'
+  | 'owner-appointments'
+  | 'owner-shop'
+  | 'product-details'
+  | 'coming-soon';
 
 export type NavKey = 'home' | 'actions' | 'shop' | 'schedule' | 'menu';
 
@@ -66,6 +74,8 @@ export interface OwnerNav {
   service: (id: string) => void;
   shop: (chip?: ProductCategory | 'all') => void;
   product: (id: string) => void;
+  book: (serviceId?: string) => void;
+  appointments: () => void;
   /** Frames that belong to other sections of the Figma file (Schedule, Cart, Messages, …). */
   soon: (label: string) => void;
 }

@@ -32,7 +32,7 @@ export function OwnerServices({ nav, chip, onChip }: OwnerServicesProps) {
             <Icon name="chat-sm" size={18} />
             Message Clinic
           </button>
-          <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => nav.soon('Book Step 1 – Pet')}>
+          <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => nav.book()}>
             <Icon name="plus-white" size={18} />
             Book Appointment
           </button>
@@ -53,7 +53,7 @@ export function OwnerServices({ nav, chip, onChip }: OwnerServicesProps) {
             type="button"
             className={`${s.btn} ${s.btnWhite}`}
             style={{ width: 210, boxShadow: 'var(--shadow-cta)' }}
-            onClick={() => nav.soon('Book Step 1 – Pet')}
+            onClick={() => nav.book('consultation')}
           >
             Book Consultation
           </button>
@@ -95,7 +95,7 @@ export function OwnerServices({ nav, chip, onChip }: OwnerServicesProps) {
               <button type="button" className={`${s.btn} ${s.btnSm} ${s.btnSecondary}`} onClick={() => nav.service(svc.id)}>
                 View Details
               </button>
-              <button type="button" className={`${s.btn} ${s.btnSm} ${s.btnPrimary}`} style={{ boxShadow: 'none' }} onClick={() => nav.soon('Book Step 1 – Pet')}>
+              <button type="button" className={`${s.btn} ${s.btnSm} ${s.btnPrimary}`} style={{ boxShadow: 'none' }} onClick={() => nav.book(svc.id)}>
                 Book Service
               </button>
             </div>

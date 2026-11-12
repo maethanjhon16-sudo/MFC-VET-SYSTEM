@@ -1,4 +1,6 @@
-import { useMemo, useReducer } from 'react';
+import { useCallback, useEffect, useMemo, useReducer } from 'react';
+import { decideStaffAppointment, getStaffSchedule, type Appointment as ApiAppointment } from '../auth/api';
+import { StaffAppointmentQueue } from '../appointments/StaffAppointmentQueue';
 import styles from './DoctorFlow.module.css';
 
 type DoctorView = 'dashboard' | 'appointments' | 'calendar' | 'patients' | 'patient-details' | 'appointment-details';
@@ -33,27 +35,58 @@ const PATIENTS: Patient[] = [
 ];
 
 function localDate(daysFromToday: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + daysFromToday);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  const date = new Date(`${values.year}-${values.month}-${values.day}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + daysFromToday);
+  return date.toISOString().slice(0, 10);
 }
 
 function dateLabel(date: string): string {
-  return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(`${date}T12:00:00+08:00`).toLocaleDateString('en-PH', {
+    timeZone: 'Asia/Manila',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 function weekdayLabel(date: string): string {
-  return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
+  return new Date(`${date}T12:00:00+08:00`).toLocaleDateString('en-PH', {
+    timeZone: 'Asia/Manila',
+    weekday: 'short',
+  });
 }
 
-const INITIAL_APPOINTMENTS: Appointment[] = [
-  { id: 'apt-1', owner: 'Maria Santos', pet: 'Milo', species: 'Dog', service: 'General consultation', date: localDate(0), time: '09:00 AM', status: 'Confirmed', reason: 'Annual wellness exam and vaccine review.' },
-  { id: 'apt-2', owner: 'Paolo Reyes', pet: 'Luna', species: 'Cat', service: 'Skin consultation', date: localDate(0), time: '10:30 AM', status: 'Pending', reason: 'Itching and redness around the ears.' },
-  { id: 'apt-3', owner: 'Ana Cruz', pet: 'Coco', species: 'Dog', service: 'Dental check-up', date: localDate(0), time: '01:00 PM', status: 'Confirmed', reason: 'Routine oral health check.' },
-  { id: 'apt-4', owner: 'Jose Dela Cruz', pet: 'Bambi', species: 'Rabbit', service: 'Wellness check', date: localDate(1), time: '09:30 AM', status: 'Pending', reason: 'First wellness visit.' },
-  { id: 'apt-5', owner: 'Maria Santos', pet: 'Milo', species: 'Dog', service: 'Vaccination', date: localDate(2), time: '11:00 AM', status: 'Confirmed', reason: 'Booster vaccination.' },
-  { id: 'apt-6', owner: 'Ana Cruz', pet: 'Coco', species: 'Dog', service: 'Follow-up', date: localDate(-1), time: '03:00 PM', status: 'Completed', reason: 'Post-treatment follow-up.' },
-];
+function mapAppointment(appointment: ApiAppointment): Appointment {
+  const date = new Date(appointment.scheduledAt);
+  const dateParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const dateValues = Object.fromEntries(dateParts.map(({ type, value }) => [type, value]));
+  return {
+    id: appointment.id,
+    owner: appointment.ownerName ?? 'Pet owner',
+    pet: appointment.petName,
+    species: 'Pet',
+    service: appointment.serviceName,
+    date: `${dateValues.year}-${dateValues.month}-${dateValues.day}`,
+    time: date.toLocaleTimeString('en-PH', {
+      timeZone: 'Asia/Manila',
+      hour: 'numeric',
+      minute: '2-digit',
+    }),
+    status: appointment.status === 'confirmed' ? 'Confirmed' : 'Pending',
+    reason: appointment.notes || 'No visit notes provided.',
+  };
+}
 
 interface DoctorState {
   view: DoctorView;
@@ -63,6 +96,9 @@ interface DoctorState {
   selectedPatientId: string | null;
   weekOffset: number;
   message: string;
+  appointmentsLoading: boolean;
+  appointmentsError: string | null;
+  savingAppointmentId: string | null;
 }
 
 type DoctorAction =
@@ -71,19 +107,26 @@ type DoctorAction =
   | { type: 'OPEN_APPOINTMENT'; id: string }
   | { type: 'OPEN_PATIENT'; id: string }
   | { type: 'BACK' }
-  | { type: 'SET_APPOINTMENT_STATUS'; id: string; status: 'Confirmed' | 'Declined' }
+  | { type: 'APPOINTMENTS_LOADED'; appointments: ApiAppointment[] }
+  | { type: 'APPOINTMENTS_FAILED'; message: string }
+  | { type: 'SAVING_APPOINTMENT'; id: string }
+  | { type: 'APPOINTMENT_DECIDED'; id: string; status: 'Confirmed' | 'Declined' }
+  | { type: 'APPOINTMENT_ACTION_FAILED'; message: string }
   | { type: 'MOVE_WEEK'; amount: number }
   | { type: 'CLEAR_MESSAGE' };
 
 function createInitialState(): DoctorState {
   return {
     view: 'dashboard',
-    appointments: INITIAL_APPOINTMENTS,
+    appointments: [],
     search: '',
-    selectedAppointmentId: 'apt-1',
+    selectedAppointmentId: null,
     selectedPatientId: null,
     weekOffset: 0,
     message: '',
+    appointmentsLoading: true,
+    appointmentsError: null,
+    savingAppointmentId: null,
   };
 }
 
@@ -99,18 +142,28 @@ function doctorReducer(state: DoctorState, action: DoctorAction): DoctorState {
       return { ...state, view: 'patient-details', selectedPatientId: action.id, message: '' };
     case 'BACK':
       return { ...state, view: state.view === 'appointment-details' ? 'appointments' : 'patients', message: '' };
-    case 'SET_APPOINTMENT_STATUS': {
-      const appointment = state.appointments.find((item) => item.id === action.id);
-      if (!appointment || appointment.status !== 'Pending') return state;
-      const appointments = state.appointments.map((item) =>
-        item.id === action.id ? { ...item, status: action.status } : item,
-      );
+    case 'APPOINTMENTS_LOADED':
       return {
         ...state,
-        appointments,
+        appointments: action.appointments.map(mapAppointment),
+        appointmentsLoading: false,
+        appointmentsError: null,
+      };
+    case 'APPOINTMENTS_FAILED':
+      return { ...state, appointmentsLoading: false, appointmentsError: action.message };
+    case 'SAVING_APPOINTMENT':
+      return { ...state, savingAppointmentId: action.id, appointmentsError: null };
+    case 'APPOINTMENT_DECIDED':
+      return {
+        ...state,
+        appointments: action.status === 'Confirmed'
+          ? state.appointments.map((item) => item.id === action.id ? { ...item, status: 'Confirmed' } : item)
+          : state.appointments.filter((item) => item.id !== action.id),
+        savingAppointmentId: null,
         message: action.status === 'Confirmed' ? 'Appointment request confirmed.' : 'Appointment request declined.',
       };
-    }
+    case 'APPOINTMENT_ACTION_FAILED':
+      return { ...state, savingAppointmentId: null, appointmentsError: action.message };
     case 'MOVE_WEEK':
       return { ...state, weekOffset: state.weekOffset + action.amount };
     case 'CLEAR_MESSAGE':
@@ -162,6 +215,22 @@ interface DoctorFlowProps {
 export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
   const [state, dispatch] = useReducer(doctorReducer, undefined, createInitialState);
   const today = localDate(0);
+  const loadSchedule = useCallback(async () => {
+    try {
+      const { appointments } = await getStaffSchedule();
+      dispatch({ type: 'APPOINTMENTS_LOADED', appointments });
+    } catch (error) {
+      dispatch({
+        type: 'APPOINTMENTS_FAILED',
+        message: error instanceof Error ? error.message : 'Could not load the clinic schedule.',
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSchedule();
+  }, [loadSchedule]);
+
   const pendingCount = state.appointments.filter((item) => item.status === 'Pending').length;
   const appointmentsToday = state.appointments.filter((item) => item.date === today && item.status !== 'Declined');
   const selectedAppointment = state.appointments.find((item) => item.id === state.selectedAppointmentId);
@@ -173,22 +242,35 @@ export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
     );
   }, [state.search]);
   const weekStart = useMemo(() => {
-    const date = new Date(`${today}T12:00:00`);
-    const day = (date.getDay() + 6) % 7;
-    date.setDate(date.getDate() - day + state.weekOffset * 7);
+    const date = new Date(`${today}T12:00:00Z`);
+    const day = (date.getUTCDay() + 6) % 7;
+    date.setUTCDate(date.getUTCDate() - day + state.weekOffset * 7);
     return date;
   }, [today, state.weekOffset]);
   const weekDates = useMemo(
     () => Array.from({ length: 7 }, (_, index) => {
       const date = new Date(weekStart);
-      date.setDate(date.getDate() + index);
-      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      date.setUTCDate(date.getUTCDate() + index);
+      return date.toISOString().slice(0, 10);
     }),
     [weekStart],
   );
 
   const navigate = (view: DoctorView) => dispatch({ type: 'NAVIGATE', view });
   const openAppointment = (id: string) => dispatch({ type: 'OPEN_APPOINTMENT', id });
+  const decideAppointment = async (id: string, decision: 'confirm' | 'decline') => {
+    dispatch({ type: 'SAVING_APPOINTMENT', id });
+    try {
+      await decideStaffAppointment(id, decision);
+      await loadSchedule();
+      dispatch({ type: 'APPOINTMENT_DECIDED', id, status: decision === 'confirm' ? 'Confirmed' : 'Declined' });
+    } catch (error) {
+      dispatch({
+        type: 'APPOINTMENT_ACTION_FAILED',
+        message: error instanceof Error ? error.message : 'Could not update this appointment.',
+      });
+    }
+  };
 
   let title = 'Doctor Dashboard';
   if (state.view === 'appointments') title = 'Appointments';
@@ -225,7 +307,7 @@ export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
         <header className={styles.topbar}>
           <div><span className={styles.breadcrumb}>Workspace</span><span className={styles.breadcrumbSlash}>/</span><b>{title}</b></div>
           <div className={styles.topActions}>
-            <span className={styles.todayLabel}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+            <span className={styles.todayLabel}>{new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'short', day: 'numeric' })}</span>
             <button type="button" className={styles.notification} aria-label={`Notifications, ${pendingCount} pending requests`} onClick={() => navigate('appointments')}>♧{pendingCount > 0 && <i>{pendingCount}</i>}</button>
             <button type="button" className={styles.topProfile} onClick={() => navigate('patients')}><span className={styles.avatarSmall}>AR</span> Dr. Andrea <span>⌄</span></button>
           </div>
@@ -233,6 +315,7 @@ export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
 
         <div className={styles.content}>
           {state.message && <div className={styles.message} role="status">{state.message}<button type="button" aria-label="Dismiss message" onClick={() => dispatch({ type: 'CLEAR_MESSAGE' })}>×</button></div>}
+          {state.appointmentsError && <div className={styles.message} role="alert">{state.appointmentsError}<button type="button" aria-label="Retry loading appointments" onClick={() => void loadSchedule()}>↻</button></div>}
 
           {state.view === 'dashboard' && (
             <>
@@ -251,7 +334,9 @@ export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
               <section className={styles.dashboardGrid}>
                 <article className={styles.panel}>
                   <div className={styles.panelHeader}><div><h2>Today’s appointments</h2><p>Your schedule for today</p></div><button type="button" className={styles.textButton} onClick={() => navigate('appointments')}>View all →</button></div>
-                  <AppointmentTable appointments={appointmentsToday} onOpen={openAppointment} />
+                  {state.appointmentsLoading
+                    ? <p className={styles.emptyNotice}>Loading your schedule…</p>
+                    : <AppointmentTable appointments={appointmentsToday} onOpen={openAppointment} />}
                 </article>
                 <article className={styles.panel}>
                   <div className={styles.panelHeader}><div><h2>Appointment requests</h2><p>Review and respond to new requests</p></div><span className={styles.requestCount}>{pendingCount} new</span></div>
@@ -268,14 +353,17 @@ export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
                   <button type="button" className={styles.secondaryButton} onClick={() => navigate('appointments')}>Manage appointment requests</button>
                 </article>
               </section>
+              <StaffAppointmentQueue role="doctor" onChanged={() => void loadSchedule()} />
             </>
           )}
 
           {state.view === 'appointments' && (
             <section className={styles.panel}>
-              <div className={styles.panelHeader}><div><h1>Appointments</h1><p>Review requests and manage your upcoming visits.</p></div><button type="button" className={styles.primaryButton} onClick={() => navigate('calendar')}>▦&nbsp; Open calendar</button></div>
+              <div className={styles.panelHeader}><div><h1>Appointments</h1><p>Review requests and manage your upcoming visits.</p></div><div><button type="button" className={styles.secondaryButton} onClick={() => void loadSchedule()}>↻&nbsp; Refresh</button><button type="button" className={styles.primaryButton} onClick={() => navigate('calendar')}>▦&nbsp; Open calendar</button></div></div>
               <div className={styles.appointmentSummary}><span><b>{pendingCount}</b> pending requests</span><span><b>{appointmentsToday.length}</b> today</span><span><b>{state.appointments.filter((item) => item.status === 'Confirmed').length}</b> confirmed</span></div>
-              <AppointmentTable appointments={state.appointments.filter((item) => item.status !== 'Declined')} onOpen={openAppointment} />
+              {state.appointmentsLoading
+                ? <p className={styles.emptyNotice}>Loading your appointments…</p>
+                : <AppointmentTable appointments={state.appointments.filter((item) => item.status !== 'Declined')} onOpen={openAppointment} />}
             </section>
           )}
 
@@ -286,7 +374,7 @@ export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
                 {weekDates.map((date) => {
                   const dayAppointments = state.appointments.filter((item) => item.date === date && item.status !== 'Declined');
                   return <article className={`${styles.calendarDay} ${date === today && state.weekOffset === 0 ? styles.currentDay : ''}`} key={date}>
-                    <div className={styles.dayHeading}><span>{weekdayLabel(date)}</span><b>{new Date(`${date}T12:00:00`).getDate()}</b></div>
+                    <div className={styles.dayHeading}><span>{weekdayLabel(date)}</span><b>{new Date(`${date}T12:00:00Z`).getUTCDate()}</b></div>
                     <div className={styles.dayEvents}>
                       {dayAppointments.map((item) => <button type="button" className={styles.event} key={item.id} onClick={() => openAppointment(item.id)}><b>{item.time}</b><span>{item.pet}</span><small>{item.service}</small></button>)}
                       {dayAppointments.length === 0 && <span className={styles.noEvents}>No visits</span>}
@@ -333,7 +421,7 @@ export function DoctorFlow({ onSignOut }: DoctorFlowProps) {
                 <article className={styles.detailCard}><h2>Visit details</h2><p><b>{selectedAppointment.pet}</b><small>{selectedAppointment.species}</small></p><p><b>{dateLabel(selectedAppointment.date)} · {selectedAppointment.time}</b><small>Requested appointment time</small></p><p><b>Reason for visit</b><small>{selectedAppointment.reason}</small></p></article>
                 <article className={styles.detailCard}><h2>Pet owner</h2><p><b>{selectedAppointment.owner}</b><small>Registered pet owner</small></p><p><b>MFC PET LIFE Clinic</b><small>24 Mabini St., Davao City</small></p></article>
               </div>
-              {selectedAppointment.status === 'Pending' && <div className={styles.detailActions}><button type="button" className={styles.secondaryButton} onClick={() => dispatch({ type: 'SET_APPOINTMENT_STATUS', id: selectedAppointment.id, status: 'Declined' })}>Decline request</button><button type="button" className={styles.primaryButton} onClick={() => dispatch({ type: 'SET_APPOINTMENT_STATUS', id: selectedAppointment.id, status: 'Confirmed' })}>✓&nbsp; Confirm appointment</button></div>}
+              {selectedAppointment.status === 'Pending' && <div className={styles.detailActions}><button type="button" className={styles.secondaryButton} disabled={state.savingAppointmentId !== null} onClick={() => void decideAppointment(selectedAppointment.id, 'decline')}>Decline request</button><button type="button" className={styles.primaryButton} disabled={state.savingAppointmentId !== null} onClick={() => void decideAppointment(selectedAppointment.id, 'confirm')}>{state.savingAppointmentId === selectedAppointment.id ? 'Saving…' : '✓  Confirm appointment'}</button></div>}
               {selectedAppointment.status === 'Confirmed' && <div className={styles.confirmedNote}>This appointment is confirmed and added to your schedule.</div>}
             </section>
           )}

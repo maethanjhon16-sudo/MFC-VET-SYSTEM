@@ -30,7 +30,7 @@ are required to compile the frontend, even when `NODE_ENV=production`.
 Create a free Neon Postgres project and copy its pooled connection string into
 `DATABASE_URL` when Render prompts for the Blueprint secret. Keep this value on the Render
 backend only; never put it in a `VITE_` variable or commit it to GitHub. The API initializes
-its auth schema on first database use. Render health checks verify the web process;
+its auth and appointment schemas on first database use. Render health checks verify the web process;
 `/api/health` reports whether a database URL is configured, not whether Neon is reachable.
 The deployment uses Node 22.12 through 24 (required by the Vite build tool).
 
@@ -106,14 +106,22 @@ monitoring.
 
 ## Pet owner and doctor workspaces (desktop)
 
-Home, Services, Service Details, Shop and Product Details live in `src/features/owner/`
-(state in `ownerReducer.ts`, shell/nav in `src/components/owner/`). After login as Pet Owner you land on Owner Home.
-Frames from other sections (Schedule, Cart, Messages, Book flow…) open a "coming soon" page.
+Home, Services, Service Details, Shop, Product Details, Schedule, appointment booking, and
+appointment history live in `src/features/owner/` (state in `ownerReducer.ts`, shell/nav in
+`src/components/owner/`). After login as Pet Owner you land on Owner Home. Cart and Messages
+remain "coming soon" pages.
 
-The doctor workspace (`src/features/doctor/DoctorFlow.tsx`) includes an interactive dashboard,
-appointment list and requests, week calendar, searchable patient directory, and patient/appointment
-details. Its sample schedule and patient records are still in-memory demo data; they are not
-stored in Neon and changes are lost on refresh.
+Owners can request appointments from the Schedule page or service screens. Requests are stored in
+Neon and start pending; active doctors and administrators can confirm or decline them from their
+workspace. The API validates the allowlisted services, future date range, clinic hours
+(Asia/Manila, Monday–Saturday, 8 AM–6 PM), and service duration. Confirmations are serialized per
+doctor and rejected when they overlap an existing confirmed appointment. Owners can cancel their
+own pending requests.
 
-`npm run icons` skips icons that already exist; use `npm run icons -- --force` to re-download all.
+The doctor workspace (`src/features/doctor/DoctorFlow.tsx`) includes the live appointment queue
+and schedule, searchable patient directory, and patient/appointment details. Patient records and
+some dashboard summary data remain demo data in memory; they are not stored in Neon.
+
+`npm run test` runs the focused appointment time-validation tests. `npm run icons` skips icons that
+already exist; use `npm run icons -- --force` to re-download all.
 Owner icon URLs were generated 2026-11-10 and expire 2026-11-17.

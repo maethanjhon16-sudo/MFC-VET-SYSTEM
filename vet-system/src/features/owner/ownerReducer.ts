@@ -30,6 +30,8 @@ export type OwnerAction =
   | { type: 'OPEN_SERVICE'; id: string }
   | { type: 'GO_SHOP'; chip?: ProductCategory | 'all'; query?: string }
   | { type: 'OPEN_PRODUCT'; id: string }
+  | { type: 'GO_BOOKING'; serviceId?: string }
+  | { type: 'GO_APPOINTMENTS' }
   | { type: 'GO_SOON'; label: string }
   | { type: 'SET_SERVICES_CHIP'; chip: ServiceCategory | 'all' }
   | { type: 'SET_SHOP_CHIP'; chip: ProductCategory | 'all' }
@@ -89,6 +91,10 @@ export function ownerReducer(state: OwnerState, action: OwnerAction): OwnerState
         tab: 'description',
         thumb: 0,
       };
+    case 'GO_BOOKING':
+      return { ...state, screen: 'appointment-booking', serviceId: action.serviceId ?? state.serviceId };
+    case 'GO_APPOINTMENTS':
+      return { ...state, screen: 'owner-appointments' };
     case 'GO_SOON':
       return { ...state, screen: 'coming-soon', soonLabel: action.label };
     case 'SET_SERVICES_CHIP':

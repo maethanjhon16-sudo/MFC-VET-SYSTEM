@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer } from 'react';
 import { approveDoctorApplication, getDoctorApplications, type DoctorApplication } from '../auth/api';
+import { StaffAppointmentQueue } from '../appointments/StaffAppointmentQueue';
 import styles from './AdminFlow.module.css';
 
 interface AdminState {
@@ -97,6 +98,7 @@ export function AdminFlow({ onSignOut }: AdminFlowProps) {
         </div>
         {state.error && <div className={styles.error} role="alert">{state.error}</div>}
         {state.message && <div className={styles.success} role="status">{state.message}<button type="button" onClick={() => dispatch({ type: 'DISMISS_MESSAGE' })}>×</button></div>}
+        <StaffAppointmentQueue role="admin" />
         <section className={styles.panel}>
           <div className={styles.panelHeading}><div><h2>Doctor applications</h2><p>Approve a doctor before they can access the clinical workspace.</p></div><b>{state.applications.length} pending</b></div>
           {state.loading ? <p className={styles.empty}>Loading applications…</p>

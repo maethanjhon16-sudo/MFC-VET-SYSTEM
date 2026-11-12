@@ -1,12 +1,96 @@
+import { useEffect, useReducer } from 'react';
 import { Icon } from '../../../components/ui/Icon';
 import { Photo } from '../../../components/owner/Photo';
 import { ProductCard, RailSection, SectionHeader, ServiceMiniCard } from '../../../components/owner/OwnerParts';
-import { APPOINTMENTS, HOME_RECOMMENDED, MEDICAL_UPDATES, OWNER, PETS, SERVICES, productsByIds } from '../data';
+import { getOwnerAppointments, type Appointment } from '../../auth/api';
+import { HOME_RECOMMENDED, MEDICAL_UPDATES, OWNER, PETS, SERVICES, productsByIds } from '../data';
 import type { OwnerNav } from '../types';
 import s from './Screens.module.css';
 
 const STATUS_CLASS = { ok: s.badgeOk, warn: s.badgeWarn, lav: s.badgeLav, sky: s.badgeSky } as const;
 const UPDATE_BG = { okbg: 'var(--color-okbg)', lav: 'var(--color-lav)', sky: 'var(--color-sky)' } as const;
+
+type AppointmentPreviewState = { appointments: Appointment[]; loading: boolean; error: string | null };
+type AppointmentPreviewAction =
+  | { type: 'LOADED'; appointments: Appointment[] }
+  | { type: 'FAILED'; message: string };
+
+function appointmentPreviewReducer(
+  state: AppointmentPreviewState,
+  action: AppointmentPreviewAction,
+): AppointmentPreviewState {
+  switch (action.type) {
+    case 'LOADED':
+      return { appointments: action.appointments, loading: false, error: null };
+    case 'FAILED':
+      return { ...state, loading: false, error: action.message };
+    default:
+      return state;
+  }
+}
+
+function UpcomingAppointments({ nav }: { nav: OwnerNav }) {
+  const [state, dispatch] = useReducer(appointmentPreviewReducer, {
+    appointments: [],
+    loading: true,
+    error: null,
+  });
+
+  useEffect(() => {
+    let active = true;
+    getOwnerAppointments().then(({ appointments }) => {
+      if (active) dispatch({ type: 'LOADED', appointments });
+    }).catch((error: unknown) => {
+      if (active) dispatch({
+        type: 'FAILED',
+        message: error instanceof Error ? error.message : 'Could not load upcoming appointments.',
+      });
+    });
+    return () => { active = false; };
+  }, []);
+
+  const upcoming = state.appointments
+    .filter((appointment) =>
+      ['pending', 'confirmed'].includes(appointment.status)
+      && Date.parse(appointment.scheduledAt) >= Date.now(),
+    )
+    .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))
+    .slice(0, 2);
+
+  return (
+    <section className={`${s.col} ${s.colGrow}`}>
+      <SectionHeader title="Upcoming appointments" linkLabel="See all" onLink={nav.appointments} />
+      {state.error && <p className={s.empty} role="alert">{state.error}</p>}
+      {state.loading && <p className={s.empty}>Loading appointments…</p>}
+      {!state.loading && !state.error && upcoming.length === 0 && (
+        <div className={`${s.card} ${s.row}`}>
+          <span className={s.info}><b>No upcoming appointments</b><span>Book a visit for your pet when you’re ready.</span></span>
+          <button type="button" className={`${s.btn} ${s.btnSm} ${s.btnPrimary}`} onClick={() => nav.book()}>Book now</button>
+        </div>
+      )}
+      {upcoming.map((appointment) => {
+        const date = new Date(appointment.scheduledAt);
+        const isPending = appointment.status === 'pending';
+        return (
+          <article key={appointment.id} className={`${s.card} ${s.row}`}>
+            <span className={s.date}>
+              <small>{date.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short' }).toUpperCase()}</small>
+              <b>{date.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', day: 'numeric' })}</b>
+            </span>
+            <span className={s.info}>
+              <b>{appointment.petName} · {appointment.serviceName}</b>
+              <span>{appointment.doctorName ?? 'Any available veterinarian'}</span>
+              <em>{date.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' })}</em>
+            </span>
+            <span className={`${s.badge} ${isPending ? s.badgeWarn : s.badgeSky}`}>
+              {isPending ? 'Pending' : 'Confirmed'}
+            </span>
+          </article>
+        );
+      })}
+    </section>
+  );
+}
 
 export function OwnerHome({ nav }: { nav: OwnerNav }) {
   return (
@@ -21,7 +105,7 @@ export function OwnerHome({ nav }: { nav: OwnerNav }) {
             <Icon name="chat-sm" size={18} />
             Message Doctor
           </button>
-          <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => nav.soon('Book Step 1 – Pet')}>
+          <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => nav.book()}>
             <Icon name="plus-white" size={18} />
             Book Appointment
           </button>
@@ -44,7 +128,7 @@ export function OwnerHome({ nav }: { nav: OwnerNav }) {
             Dr. Andrea Reyes has open slots Oct 22–24 at MFC Pet Clinic.
           </p>
           <div className={s.heroActions}>
-            <button type="button" className={`${s.btn} ${s.btnWhite}`} onClick={() => nav.soon('Book Step 1 – Pet')}>
+            <button type="button" className={`${s.btn} ${s.btnWhite}`} onClick={() => nav.book()}>
               Book now
             </button>
             <button type="button" className={`${s.btn} ${s.btnGhost}`} onClick={() => nav.soon('Pet Profile')}>
@@ -57,7 +141,7 @@ export function OwnerHome({ nav }: { nav: OwnerNav }) {
 
       <div className={s.quick}>
         {[
-          { title: 'Appointments', sub: 'Manage your visits', icon: 'quick-calendar', bg: 'var(--color-sage)', go: () => nav.soon('Owner Schedule') },
+          { title: 'Appointments', sub: 'Manage your visits', icon: 'quick-calendar', bg: 'var(--color-sage)', go: nav.appointments },
           { title: 'Pet Records', sub: 'Medical history', icon: 'quick-file', bg: 'var(--color-lav)', go: () => nav.soon('Medical Records') },
           { title: 'Messages', sub: '2 unread', icon: 'quick-chat', bg: 'var(--color-sky)', go: () => nav.soon('Messages') },
           { title: 'Shop', sub: 'Food & supplies', icon: 'quick-bag', bg: 'var(--color-cream)', go: () => nav.shop() },
@@ -94,23 +178,7 @@ export function OwnerHome({ nav }: { nav: OwnerNav }) {
       </RailSection>
 
       <div className={s.twoCol}>
-        <section className={`${s.col} ${s.colGrow}`}>
-          <SectionHeader title="Upcoming appointments" linkLabel="See all" onLink={() => nav.soon('Owner Schedule')} />
-          {APPOINTMENTS.map((a) => (
-            <button key={a.id} type="button" className={`${s.card} ${s.row}`} onClick={() => nav.soon('Appointment Details')}>
-              <span className={s.date}>
-                <small>{a.month}</small>
-                <b>{a.day}</b>
-              </span>
-              <span className={s.info}>
-                <b>{a.title}</b>
-                <span>{a.doctor}</span>
-                <em>{a.time}</em>
-              </span>
-              <span className={`${s.badge} ${STATUS_CLASS[a.statusTone]}`}>{a.status}</span>
-            </button>
-          ))}
-        </section>
+        <UpcomingAppointments nav={nav} />
         <section className={`${s.col} ${s.colFixed}`}>
           <SectionHeader title="Recent medical updates" linkLabel="See all" onLink={() => nav.soon('Medical Records')} />
           {MEDICAL_UPDATES.map((u) => (

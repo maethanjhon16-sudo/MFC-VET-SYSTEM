@@ -100,3 +100,68 @@ export function getDoctorApplications() {
 export function approveDoctorApplication(id: string) {
   return request<{ approved: boolean }>(`/api/admin/doctor-applications/${encodeURIComponent(id)}/approve`);
 }
+
+export interface BookingDoctor {
+  id: string;
+  fullName: string;
+  specialization: string | null;
+}
+
+export type AppointmentStatus = 'pending' | 'confirmed' | 'declined' | 'cancelled';
+
+export interface Appointment {
+  id: string;
+  petName: string;
+  serviceId: string;
+  serviceName: string;
+  doctorId: string | null;
+  doctorName: string | null;
+  ownerName: string | null;
+  ownerEmail: string | null;
+  ownerPhone: string | null;
+  scheduledAt: string;
+  notes: string;
+  status: AppointmentStatus;
+  createdAt: string;
+}
+
+export function getBookingDoctors() {
+  return request<{ doctors: BookingDoctor[] }>('/api/owner/doctors', undefined, 'GET');
+}
+
+export function getOwnerAppointments() {
+  return request<{ appointments: Appointment[] }>('/api/owner/appointments', undefined, 'GET');
+}
+
+export function createOwnerAppointment(input: {
+  petName: string;
+  serviceId: string;
+  doctorId: string | null;
+  scheduledAt: string;
+  notes: string;
+}) {
+  return request<{ appointment: Appointment }>('/api/owner/appointments', input);
+}
+
+export function cancelOwnerAppointment(id: string) {
+  return request<{ cancelled: boolean }>(`/api/owner/appointments/${encodeURIComponent(id)}/cancel`);
+}
+
+export function getStaffAppointments() {
+  return request<{ appointments: Appointment[] }>('/api/staff/appointments', undefined, 'GET');
+}
+
+export function getStaffSchedule() {
+  return request<{ appointments: Appointment[] }>('/api/staff/schedule', undefined, 'GET');
+}
+
+export function getStaffDoctors() {
+  return request<{ doctors: BookingDoctor[] }>('/api/staff/doctors', undefined, 'GET');
+}
+
+export function decideStaffAppointment(id: string, decision: 'confirm' | 'decline', doctorId?: string) {
+  return request<{ appointment: { id: string; status: AppointmentStatus } }>(
+    `/api/staff/appointments/${encodeURIComponent(id)}/decision`,
+    { decision, doctorId },
+  );
+}
