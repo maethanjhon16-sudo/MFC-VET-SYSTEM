@@ -3,11 +3,14 @@ import type { FormEvent, ReactNode } from 'react';
 import { Icon } from '../../components/ui/Icon';
 import {
   completeStaffFollowUp,
+  createStaffFollowUp,
   getStaffAvailability,
+  getStaffAppointmentTimes,
   getStaffClinicalRecords,
   getStaffConversationMessages,
   getStaffConversations,
   getStaffFollowUps,
+  getStaffDoctors,
   getStaffInventory,
   getStaffLabResults,
   getStaffOrders,
@@ -34,6 +37,7 @@ import {
   type LabResult as ApiLabResult,
   type StaffConversation,
   type StaffFollowUp,
+  type BookingDoctor,
   type StaffMessage,
   type StaffOrder,
   type StaffProfile,
@@ -140,6 +144,7 @@ type WorkspaceAction =
   | { type: 'LAB_UPDATED'; labResult: ApiLabResult }
   | { type: 'LAB_REVIEWED'; labResult: Pick<ApiLabResult, 'id' | 'status' | 'reviewedAt'> }
   | { type: 'FOLLOW_UP_COMPLETED'; id: string }
+  | { type: 'FOLLOW_UPS_RELOADED'; followUps: StaffFollowUp[] }
   | { type: 'SERVICE_UPDATED'; service: ClinicServiceSetting }
   | { type: 'INVENTORY_UPDATED'; item: InventoryItem }
   | { type: 'SET_STOCK_DRAFT'; productId: string; value: string }
@@ -183,7 +188,7 @@ function isOrderStatus(value: string): value is StaffOrder['status'] {
 }
 const RECORD_FILTERS = ['All records', 'Patient profile', 'Consultation', 'Vaccination', 'Procedure', 'Lab notes'];
 const LAB_FILTERS = ['All', 'Pending', 'In lab', 'Ready', 'Reviewed'];
-const FOLLOW_UP_FILTERS = ['All', 'Overdue', 'Due soon', 'Scheduled'];
+const FOLLOW_UP_FILTERS = ['All', 'Medication', 'Awaiting owner', 'Overdue', 'Due soon', 'Scheduled'];
 
 function createInitialState(): WorkspaceState {
   return {
@@ -275,6 +280,8 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
       return { ...state, labResults: state.labResults.map((item) => item.id === action.labResult.id ? { ...item, ...action.labResult } : item), saving: false, actionError: null, notice: 'Lab result marked reviewed.' };
     case 'FOLLOW_UP_COMPLETED':
       return { ...state, followUps: state.followUps.filter((item) => item.id !== action.id), saving: false, actionError: null, notice: 'Follow-up marked complete.' };
+    case 'FOLLOW_UPS_RELOADED':
+      return { ...state, followUps: action.followUps, saving: false, actionError: null, notice: 'Follow-up saved and shared with the pet owner.' };
     case 'SERVICE_UPDATED':
       return { ...state, services: state.services.map((item) => item.serviceId === action.service.serviceId ? action.service : item), serviceAvailability: { ...state.serviceAvailability, [action.service.serviceId]: action.service.isEnabled }, saving: false, actionError: null, notice: 'Service availability saved.' };
     case 'INVENTORY_UPDATED':
@@ -410,6 +417,17 @@ export function DoctorWorkspacePages({
   const [editingLabId, setEditingLabId] = useState<string | null>(null);
   const [labStatusDraft, setLabStatusDraft] = useState<'in_lab' | 'ready'>('in_lab');
   const [labResultDraft, setLabResultDraft] = useState('');
+  const [followUpFormOpen, setFollowUpFormOpen] = useState(false);
+  const [followUpType, setFollowUpType] = useState<'medicine' | 'revisit'>('medicine');
+  const [followUpDoctors, setFollowUpDoctors] = useState<BookingDoctor[]>([]);
+  const [followUpDoctorId, setFollowUpDoctorId] = useState('');
+  const [followUpServiceId, setFollowUpServiceId] = useState('consultation');
+  const [followUpDate, setFollowUpDate] = useState(manilaDate());
+  const [followUpTime, setFollowUpTime] = useState('');
+  const [followUpTimes, setFollowUpTimes] = useState<string[]>([]);
+  const [followUpTimesLoading, setFollowUpTimesLoading] = useState(false);
+  const [followUpFormError, setFollowUpFormError] = useState<string | null>(null);
+  const [followUpTimesError, setFollowUpTimesError] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
     let loading = false;
@@ -479,6 +497,63 @@ export function DoctorWorkspacePages({
     return () => { active = false; };
   }, [state.selectedConversationId]);
   useEffect(() => {
+    if (!followUpFormOpen) return;
+    let active = true;
+    const currentDoctorId = state.profile?.id;
+    getStaffDoctors().then(({ doctors }) => {
+      if (!active) return;
+      setFollowUpDoctors(doctors);
+      if (currentDoctorId && doctors.some((doctor) => doctor.id === currentDoctorId)) {
+        setFollowUpDoctorId(currentDoctorId);
+      } else {
+        setFollowUpDoctorId((current) => current || doctors[0]?.id || '');
+      }
+    }).catch((error: unknown) => {
+      if (active) setFollowUpFormError(error instanceof Error ? error.message : 'Could not load clinic veterinarians.');
+    });
+    return () => { active = false; };
+  }, [followUpFormOpen, state.profile?.id]);
+  useEffect(() => {
+    if (!state.services.length) return;
+    const enabledIds = SERVICES.filter((service) =>
+      state.services.some((setting) => setting.serviceId === service.id && setting.isEnabled),
+    ).map((service) => service.id);
+    if (enabledIds.length && !enabledIds.includes(followUpServiceId)) {
+      setFollowUpServiceId(enabledIds[0] ?? '');
+    }
+  }, [followUpServiceId, state.services]);
+  useEffect(() => {
+    if (
+      !followUpFormOpen || followUpType !== 'revisit'
+      || !followUpDoctorId || !followUpDate || !followUpServiceId
+    ) {
+      setFollowUpTimes([]);
+      setFollowUpTime('');
+      setFollowUpTimesError(null);
+      return;
+    }
+    let active = true;
+    setFollowUpTimesLoading(true);
+    setFollowUpTimesError(null);
+    getStaffAppointmentTimes({
+      date: followUpDate,
+      serviceId: followUpServiceId,
+      doctorId: followUpDoctorId,
+    }).then(({ times }) => {
+      if (!active) return;
+      setFollowUpTimes(times);
+      setFollowUpTime((current) => times.includes(current) ? current : times[0] ?? '');
+    }).catch((error: unknown) => {
+      if (!active) return;
+      setFollowUpTimes([]);
+      setFollowUpTime('');
+      setFollowUpTimesError(error instanceof Error ? error.message : 'Could not load available revisit times.');
+    }).finally(() => {
+      if (active) setFollowUpTimesLoading(false);
+    });
+    return () => { active = false; };
+  }, [followUpDate, followUpDoctorId, followUpFormOpen, followUpServiceId, followUpType]);
+  useEffect(() => {
     if (state.profile && !state.profileDirty && state.profile.fullName !== doctorName) {
       onProfileUpdated(state.profile.fullName);
     }
@@ -538,10 +613,18 @@ export function DoctorWorkspacePages({
       day: 'numeric',
       year: 'numeric',
     }),
-    due: new Date(`${item.followUpAt.slice(0, 10)}T12:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }),
-    status: item.followUpAt.slice(0, 10) < todayManila
-      ? 'Overdue'
-      : item.followUpAt.slice(0, 10) <= weekManila ? 'Due soon' : 'Scheduled',
+    due: item.appointmentScheduledAt
+      ? new Date(item.appointmentScheduledAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+      : item.followUpAt
+        ? new Date(`${item.followUpAt.slice(0, 10)}T12:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })
+        : 'Medication plan',
+    status: item.followUpType === 'medicine'
+      ? 'Medication'
+      : item.appointmentStatus === 'pending'
+        ? 'Awaiting owner'
+        : item.followUpAt && item.followUpAt.slice(0, 10) < todayManila
+          ? 'Overdue'
+          : item.followUpAt && item.followUpAt.slice(0, 10) <= weekManila ? 'Due soon' : 'Scheduled',
   })).filter((item) => {
     const matchesText = `${item.patient} ${item.owner} ${item.reason}`.toLowerCase().includes(query);
     const matchesStatus = state.filters['follow-up'] === 'All' || item.status === state.filters['follow-up'];
@@ -549,6 +632,9 @@ export function DoctorWorkspacePages({
   }), [query, state.filters, state.followUps, todayManila, weekManila]);
   const visibleServices = SERVICES.filter((service) => `${service.name} ${service.blurb} ${service.category}`.toLowerCase().includes(query)
     && (state.filters.service === 'All' || service.category === state.filters.service));
+  const enabledFollowUpServices = SERVICES.filter((service) =>
+    state.services.some((setting) => setting.serviceId === service.id && setting.isEnabled),
+  );
   const visibleProducts = PRODUCTS.filter((product) => `${product.name} ${product.category}`.toLowerCase().includes(query));
   const visibleOrders = state.orders.filter((order) => `${order.id} ${order.customerName} ${order.items.map((item) => item.productName).join(' ')}`.toLowerCase().includes(query)
     && (state.filters.order === 'All' || order.status.replaceAll('_', ' ') === state.filters.order.toLowerCase()));
@@ -576,6 +662,52 @@ export function DoctorWorkspacePages({
       dispatch({ type: 'RECORD_CREATED', record });
     } catch (error) {
       dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not save this clinical record.' });
+    }
+  };
+  const submitFollowUp = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const petId = String(formData.get('petId') ?? '');
+    const summary = String(formData.get('summary') ?? '').trim();
+    if (!petId || !summary) return;
+    if (!followUpDoctorId) {
+      setFollowUpFormError('Choose an active veterinarian for this follow-up.');
+      return;
+    }
+    setFollowUpFormError(null);
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      if (followUpType === 'medicine') {
+        await createStaffFollowUp({
+          type: 'medicine',
+          petId,
+          doctorId: followUpDoctorId,
+          summary,
+          medicineName: String(formData.get('medicineName') ?? '').trim(),
+          medicineDose: String(formData.get('medicineDose') ?? '').trim(),
+          medicineInstructions: String(formData.get('medicineInstructions') ?? '').trim(),
+        });
+      } else {
+        if (!followUpTime) {
+          setFollowUpFormError('Choose an available revisit time.');
+          dispatch({ type: 'SAVING', value: false });
+          return;
+        }
+        await createStaffFollowUp({
+          type: 'revisit',
+          petId,
+          doctorId: followUpDoctorId,
+          summary,
+          serviceId: followUpServiceId,
+          scheduledAt: new Date(`${followUpDate}T${followUpTime}:00+08:00`).toISOString(),
+        });
+      }
+      const { followUps } = await getStaffFollowUps();
+      dispatch({ type: 'FOLLOW_UPS_RELOADED', followUps });
+      setFollowUpFormOpen(false);
+    } catch (error) {
+      setFollowUpFormError(error instanceof Error ? error.message : 'Could not save this follow-up.');
+      dispatch({ type: 'SAVING', value: false });
     }
   };
   const submitLab = async (event: FormEvent<HTMLFormElement>) => {
@@ -756,7 +888,10 @@ export function DoctorWorkspacePages({
       <PageHeader eyebrow={title.eyebrow} title={title.title} description={title.description}>
         {view === 'records' && <><button type="button" className={styles.secondaryButton} onClick={() => exportCsv('clinical-records.csv', [['Patient', 'Owner', 'Record type', 'Summary', 'Date', 'Status'], ...filteredRecords.map((record) => [record.patient, record.owner, record.type, record.summary, record.date, record.status])])}>Export</button><button type="button" className={styles.primaryButton} onClick={() => dispatch({ type: 'TOGGLE_RECORD_FORM' })}>＋ Add record</button></>}
         {view === 'labs' && <button type="button" className={styles.primaryButton} onClick={() => dispatch({ type: 'TOGGLE_LAB_FORM' })}>＋ Request test</button>}
-        {view === 'follow-ups' && <button type="button" className={styles.primaryButton} onClick={() => onNavigate('calendar')}><Icon name="nav-calendar" size={17} />Schedule follow-up</button>}
+        {view === 'follow-ups' && <button type="button" className={styles.primaryButton} onClick={() => {
+          setFollowUpFormOpen((open) => !open);
+          setFollowUpFormError(null);
+        }}><Icon name="nav-calendar" size={17} />{followUpFormOpen ? 'Close follow-up form' : '＋ New follow-up'}</button>}
         {view === 'orders' && <button type="button" className={styles.secondaryButton} onClick={() => exportCsv('orders.csv', [['Order', 'Customer', 'Items', 'Total', 'Payment', 'Status'], ...visibleOrders.map((order) => [order.id, order.customerName, order.items.map((item) => `${item.quantity} × ${item.productName}`).join('; '), order.totalAmount, order.paymentMethod, order.status])])}>Export</button>}
       </PageHeader>
       {state.loading && <p className={styles.muted} role="status">Loading clinic data…</p>}
@@ -841,23 +976,58 @@ export function DoctorWorkspacePages({
       </>}
 
       {view === 'follow-ups' && <>
+        {followUpFormOpen && <form className={styles.dataForm} onSubmit={(event) => void submitFollowUp(event)}>
+          <label>Follow-up type<select value={followUpType} onChange={(event) => {
+            setFollowUpType(event.target.value as 'medicine' | 'revisit');
+            setFollowUpFormError(null);
+          }}><option value="medicine">Medicine recommendation</option><option value="revisit">Revisit appointment</option></select></label>
+          <label>Patient<select name="petId" required defaultValue=""><option value="" disabled>Choose an assigned patient</option>{patients.map((patient) => <option value={patient.id} key={patient.id}>{patient.name} · {patient.owner}</option>)}</select></label>
+          {state.profile && followUpDoctors.some((doctor) => doctor.id === state.profile?.id)
+            ? <label>Veterinarian<input value={state.profile.fullName} readOnly /></label>
+            : <label>Veterinarian<select value={followUpDoctorId} onChange={(event) => setFollowUpDoctorId(event.target.value)} required><option value="" disabled>Choose a veterinarian</option>{followUpDoctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.fullName}{doctor.specialization ? ` · ${doctor.specialization}` : ''}</option>)}</select></label>}
+          <label className={styles.wideField}>{followUpType === 'medicine' ? 'Care note' : 'Reason and visit notes'}
+            <textarea name="summary" required maxLength={followUpType === 'medicine' ? 2000 : 500} rows={2} placeholder={followUpType === 'medicine' ? 'Explain why this medicine is recommended.' : 'What should the veterinarian review at the revisit?'} />
+          </label>
+          {followUpType === 'medicine' ? <>
+            <label>Medicine name<input name="medicineName" required maxLength={200} placeholder="Medicine name" /></label>
+            <label>Dose<input name="medicineDose" required maxLength={200} placeholder="Dose and frequency" /></label>
+            <label className={styles.wideField}>Instructions<textarea name="medicineInstructions" required maxLength={2000} rows={3} placeholder="How to give it, duration, and any precautions" /></label>
+          </> : <>
+            <label>Clinic service<select value={followUpServiceId} onChange={(event) => setFollowUpServiceId(event.target.value)} required>
+              {enabledFollowUpServices.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
+            </select></label>
+            <label>Revisit date<input type="date" value={followUpDate} min={manilaDate()} max={manilaDate(90)} onChange={(event) => setFollowUpDate(event.target.value)} required /></label>
+            <label>Available time<select value={followUpTime} onChange={(event) => setFollowUpTime(event.target.value)} required disabled={followUpTimesLoading || followUpTimes.length === 0}>
+              <option value="">{followUpTimesLoading ? 'Loading times…' : followUpTimes.length ? 'Choose a time' : 'No available times'}</option>
+              {followUpTimes.map((time) => <option key={time} value={time}>{new Date(`2000-01-01T${time}:00+08:00`).toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' })}</option>)}
+            </select></label>
+            {followUpTimesError && <p className={`${styles.error} ${styles.wideField}`} role="alert">{followUpTimesError}</p>}
+            <p className={`${styles.muted} ${styles.wideField}`}>The pet owner will receive a pending revisit request to confirm. The time is checked against the veterinarian’s live availability.</p>
+          </>}
+          {followUpFormError && <p className={`${styles.error} ${styles.wideField}`} role="alert">{followUpFormError}</p>}
+          <div className={styles.formActions}>
+            <button type="button" className={styles.secondaryButton} onClick={() => setFollowUpFormOpen(false)}>Cancel</button>
+            <button type="submit" className={styles.primaryButton} disabled={state.saving || (followUpType === 'revisit' && (!followUpTime || followUpTimesLoading || enabledFollowUpServices.length === 0))}>{state.saving ? 'Saving…' : followUpType === 'medicine' ? 'Share medicine plan' : 'Send revisit request'}</button>
+          </div>
+        </form>}
         <div className={styles.metrics}>
           <article><span>Open follow-ups</span><b>{followUpRows.length}</b><small>Saved clinical plans</small></article>
-          <article><span>Overdue</span><b>{state.followUps.filter((item) => item.followUpAt.slice(0, 10) < todayManila).length}</b><small>Needs action now</small></article>
-          <article><span>Due soon</span><b>{state.followUps.filter((item) => item.followUpAt.slice(0, 10) >= todayManila && item.followUpAt.slice(0, 10) <= weekManila).length}</b><small>Next 7 days</small></article>
+          <article><span>Overdue</span><b>{state.followUps.filter((item) => item.followUpAt && item.followUpAt.slice(0, 10) < todayManila).length}</b><small>Needs action now</small></article>
+          <article><span>Due soon</span><b>{state.followUps.filter((item) => item.followUpAt && item.followUpAt.slice(0, 10) >= todayManila && item.followUpAt.slice(0, 10) <= weekManila).length}</b><small>Next 7 days</small></article>
+          <article><span>Owner revisit requests</span><b>{state.followUps.filter((item) => item.appointmentStatus === 'pending').length}</b><small>Waiting for owner response</small></article>
           <article><span>Appointments loaded</span><b>{appointments.length}</b><small>From the clinic schedule</small></article>
         </div>
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search by pet or owner..." /></div>
         <FilterButtons values={FOLLOW_UP_FILTERS} selected={state.filters['follow-up']} onSelect={(value) => dispatch({ type: 'SET_FILTER', key: 'follow-up', value })} />
         <div className={styles.tableWrap}><table className={styles.table}>
-          <thead><tr><th>Patient</th><th>Reason for follow-up</th><th>Clinical record date</th><th>Due date</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Patient</th><th>Plan and medicine</th><th>Clinical record date</th><th>Due date</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>{followUpRows.map((item) => <tr key={item.id}>
             <td><button type="button" className={styles.patientLink} onClick={() => onOpenPatient(item.petId)}><b>{item.patient}</b><small>{item.owner}</small></button></td>
-            <td>{item.reason}</td><td>{item.recordDate}</td><td><b>{item.due}</b></td><td><Status>{item.status}</Status></td>
+            <td className={styles.summaryCell}><b>{item.reason}</b>{item.followUpType === 'medicine' && <small>{item.medicineName} · {item.medicineDose}</small>}{item.followUpType === 'medicine' && <small>{item.medicineInstructions}</small>}</td><td>{item.recordDate}</td><td><b>{item.due}</b></td><td><Status>{item.status}</Status></td>
             <td><div className={styles.rowActions}>
-              <button type="button" className={styles.softButton} onClick={() => onNavigate('calendar')}>View calendar</button>
+              {item.followUpType === 'revisit' && <button type="button" className={styles.softButton} onClick={() => onNavigate('calendar')}>View calendar</button>}
               <button type="button" className={styles.textButton} onClick={() => onNavigate('appointments')}>Appointments</button>
-              <button type="button" className={styles.textButton} disabled={state.saving} onClick={() => void completeFollowUp(item.id)}>Mark complete</button>
+              <button type="button" className={styles.textButton} disabled={state.saving || item.appointmentStatus === 'pending'} onClick={() => void completeFollowUp(item.id)}>{item.appointmentStatus === 'pending' ? 'Awaiting owner' : 'Mark complete'}</button>
             </div></td>
           </tr>)}{followUpRows.length === 0 && <tr><td colSpan={6} className={styles.empty}>No follow-ups match this filter.</td></tr>}</tbody>
         </table></div>

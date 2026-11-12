@@ -29,7 +29,7 @@
 .summaryLine b { color: var(--color-ink); }
 .clinicNote { display: flex; flex-direction: column; gap: 5px; width: 100%; padding: 14px; border-radius: 12px; color: var(--color-forest); background: var(--color-sage); font-size: 12px; line-height: 1.5; }
 .clinicNote span { color: var(--color-mute); }
-.primaryButton, .secondaryButton, .cancelButton, .cancelRequest, .backButton {
+.primaryButton, .secondaryButton, .cancelButton, .cancelRequest, .confirmRequest, .backButton {
   display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 0 16px; border: 1px solid transparent;
   border-radius: 12px; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer;
 }
@@ -58,7 +58,10 @@
 .confirmed { color: var(--color-ok); background: var(--color-okbg); }
 .declined, .cancelled { color: #76564e; background: #f3e9e6; }
 .cancelRequest { flex: 0 0 auto; color: var(--color-forest); border-color: var(--color-line); background: var(--color-white); }
-.cancelRequest:disabled { cursor: wait; opacity: .6; }
+.confirmRequest { flex: 0 0 auto; color: var(--color-white); background: var(--color-forest); }
+.cancelRequest:disabled, .confirmRequest:disabled { cursor: wait; opacity: .6; }
+.appointmentActions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; }
+.appointmentActions .confirmRequest, .appointmentActions .cancelRequest { min-height: 38px; padding: 0 12px; font-size: 11px; }
 .empty { margin: 0; padding: 36px 20px; color: var(--color-mute); text-align: center; }
 .emptyCard { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .emptyCard h2 { margin: 0; color: var(--color-ink); }
@@ -81,12 +84,13 @@
   .appointment { align-items: flex-start; flex-wrap: wrap; }
   .appointmentInfo { flex-basis: calc(100% - 90px); }
   .status { margin-left: 82px; }
-  .cancelRequest { margin-left: auto; }
+  .appointmentActions { margin-left: auto; }
+  .appointment > .cancelRequest { margin-left: auto; }
 }
 
 @media (max-width: 460px) {
   .fieldRow { grid-template-columns: 1fr; }
   .card { padding: 18px; }
   .status { margin-left: 0; }
-  .cancelRequest { margin-left: 0; }
+  .appointmentActions, .appointment > .cancelRequest { margin-left: 0; }
 }
