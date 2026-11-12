@@ -52,8 +52,9 @@
   background: var(--color-white); border: 1px solid var(--color-line); border-radius: 99px;
   font-size: 13px; font-weight: 800; color: var(--color-ink); white-space: nowrap;
 }
+.profileName { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 .avatar {
-  display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 99px; font-size: 17px;
+  display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 99px; font-size: 11px; font-weight: 800;
   background: linear-gradient(to bottom, #e3ede2, #a9c4ae);
 }
 
@@ -63,7 +64,8 @@
   display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 26px 64px;
   background: var(--color-white); border-top: 1px solid var(--color-line);
 }
-.footer p { margin: 0; font-size: 12px; font-weight: 500; color: var(--color-mute); white-space: pre; }
+.location { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; font-size: 12px; font-weight: 500; color: var(--color-mute); }
+.location span { min-width: 0; }
 .footBrand { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 800; color: var(--color-forest); }
 .logoSm { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 99px; background: var(--color-cream); }
 .help { padding: 0; border: 0; background: none; font-size: 12px; font-weight: 700; color: var(--color-purple); }

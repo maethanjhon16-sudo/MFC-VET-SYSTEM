@@ -101,7 +101,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
           label="Province"
           name="province"
           autoComplete="address-level1"
-          placeholder="Davao del Sur"
+          placeholder="Cotabato"
           value={values.province}
           onChange={(value) => setField('province', value)}
           required
@@ -110,7 +110,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
           label="City / Municipality"
           name="city"
           autoComplete="address-level2"
-          placeholder="Davao City"
+          placeholder="Kidapawan City"
           value={values.city}
           onChange={(value) => setField('city', value)}
           required
@@ -121,7 +121,7 @@ export function OwnerSignUp({ go }: Pick<ScreenProps, 'go'>) {
         label="Barangay"
         name="barangay"
         autoComplete="address-level3"
-        placeholder="Poblacion District"
+        placeholder="Poblacion"
         value={values.barangay}
         onChange={(value) => setField('barangay', value)}
         required

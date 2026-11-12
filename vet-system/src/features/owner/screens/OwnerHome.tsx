@@ -2,8 +2,9 @@ import { useEffect, useReducer } from 'react';
 import { Icon } from '../../../components/ui/Icon';
 import { Photo } from '../../../components/owner/Photo';
 import { ProductCard, RailSection, SectionHeader, ServiceMiniCard } from '../../../components/owner/OwnerParts';
+import { CLINIC_HOURS, getClinicGreeting } from '../../clinicInfo';
 import { getOwnerAppointments, type Appointment } from '../../auth/api';
-import { HOME_RECOMMENDED, MEDICAL_UPDATES, OWNER, PETS, SERVICES, productsByIds } from '../data';
+import { HOME_RECOMMENDED, MEDICAL_UPDATES, PETS, SERVICES, productsByIds } from '../data';
 import type { OwnerNav } from '../types';
 import s from './Screens.module.css';
 
@@ -92,12 +93,16 @@ function UpcomingAppointments({ nav }: { nav: OwnerNav }) {
   );
 }
 
-export function OwnerHome({ nav }: { nav: OwnerNav }) {
+export function OwnerHome({ nav, ownerName }: { nav: OwnerNav; ownerName: string }) {
   return (
     <div className={s.stack}>
       <div className={s.pageHeader}>
         <div className={s.title}>
-          <h1>Good morning, {OWNER.name}</h1>
+          <span className={s.openHours}>
+            <Icon name="info-clock" size={16} />
+            {CLINIC_HOURS}
+          </span>
+          <h1>{getClinicGreeting()}, {ownerName}</h1>
           <p>Here’s what’s happening with your pets today.</p>
         </div>
         <div className={s.headerActions}>

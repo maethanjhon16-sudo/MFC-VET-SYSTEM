@@ -1,12 +1,13 @@
 import type { FormEvent, ReactNode } from 'react';
 import { Icon } from '../ui/Icon';
-import { OWNER } from '../../features/owner/data';
+import { CLINIC_ADDRESS } from '../../features/clinicInfo';
 import type { NavKey, OwnerNav } from '../../features/owner/types';
 import styles from './OwnerShell.module.css';
 
 interface OwnerShellProps {
   active: NavKey | null;
   nav: OwnerNav;
+  ownerName: string;
   cartCount: number;
   onSearch: (query: string) => void;
   /** Search box text, so the header stays in sync with the shop search. */
@@ -29,7 +30,7 @@ const ITEMS: NavItem[] = [
   { key: 'menu', label: 'Menu', icon: 'nav-menu' },
 ];
 
-export function OwnerShell({ active, nav, cartCount, onSearch, query = '', children }: OwnerShellProps) {
+export function OwnerShell({ active, nav, ownerName, cartCount, onSearch, query = '', children }: OwnerShellProps) {
   const go = (key: NavKey) => {
     if (key === 'home') nav.home();
     else if (key === 'actions') nav.services();
@@ -43,6 +44,7 @@ export function OwnerShell({ active, nav, cartCount, onSearch, query = '', child
     const value = new FormData(event.currentTarget).get('q');
     onSearch(typeof value === 'string' ? value.trim() : '');
   };
+  const initials = ownerName.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 
   return (
     <div className={styles.page}>
@@ -91,8 +93,8 @@ export function OwnerShell({ active, nav, cartCount, onSearch, query = '', child
             <span className={styles.dot} />
           </button>
           <button type="button" className={styles.profile} onClick={() => nav.soon('Owner Menu')}>
-            <span className={styles.avatar}>{OWNER.emoji}</span>
-            {OWNER.name}
+            <span className={styles.avatar} aria-hidden="true">{initials}</span>
+            <span className={styles.profileName} title={ownerName}>{ownerName}</span>
           </button>
         </div>
       </header>
@@ -106,7 +108,10 @@ export function OwnerShell({ active, nav, cartCount, onSearch, query = '', child
           </span>
           MFC PET LIFE
         </div>
-        <p>24 Mabini St., Poblacion District, Davao City&nbsp; ·&nbsp; Open Mon–Sat 8:00 AM – 6:00 PM</p>
+        <p className={styles.location}>
+          <Icon name="info-pin" size={16} />
+          <span>{CLINIC_ADDRESS}</span>
+        </p>
         <button type="button" className={styles.help} onClick={() => nav.soon('Help & Contact')}>
           Help &amp; Contact
         </button>

@@ -14,6 +14,7 @@ import s from './screens/Screens.module.css';
 
 interface OwnerFlowProps {
   initialScreen?: OwnerScreen;
+  ownerName: string;
   /** Called when the owner signs out. */
   onSignOut: () => void;
 }
@@ -29,7 +30,7 @@ const ACTIVE_NAV: Record<OwnerScreen, NavKey | null> = {
   'coming-soon': null,
 };
 
-export function OwnerFlow({ initialScreen = 'owner-home', onSignOut }: OwnerFlowProps) {
+export function OwnerFlow({ initialScreen = 'owner-home', ownerName, onSignOut }: OwnerFlowProps) {
   const [state, dispatch] = useReducer(ownerReducer, initialScreen, createInitialState);
 
   const nav = useMemo<OwnerNav>(
@@ -64,11 +65,12 @@ export function OwnerFlow({ initialScreen = 'owner-home', onSignOut }: OwnerFlow
     <OwnerShell
       active={ACTIVE_NAV[state.screen]}
       nav={nav}
+      ownerName={ownerName}
       cartCount={cartCount(state.cart)}
       query={state.screen === 'owner-shop' ? state.shopQuery : ''}
       onSearch={(query) => dispatch({ type: 'GO_SHOP', query })}
     >
-      {state.screen === 'owner-home' && <OwnerHome nav={nav} />}
+      {state.screen === 'owner-home' && <OwnerHome nav={nav} ownerName={ownerName} />}
       {state.screen === 'owner-services' && (
         <OwnerServices nav={nav} chip={state.servicesChip} onChip={(chip) => dispatch({ type: 'SET_SERVICES_CHIP', chip })} />
       )}
@@ -95,6 +97,7 @@ export function OwnerFlow({ initialScreen = 'owner-home', onSignOut }: OwnerFlow
       )}
       {state.screen === 'product-details' && (
         <ProductDetails
+          key={state.productId}
           nav={nav}
           product={product}
           sizeIndex={state.sizeIndex}

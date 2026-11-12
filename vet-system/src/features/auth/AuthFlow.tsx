@@ -9,12 +9,13 @@ import { OwnerSignUp } from './screens/OwnerSignUp';
 import { RegistrationConfirmation } from './screens/RegistrationConfirmation';
 import { ResetLinkSent } from './screens/ResetLinkSent';
 import { RoleSelection } from './screens/RoleSelection';
+import type { AuthUser } from './api';
 import type { AuthScreen, ExitDestination } from './types';
 
 interface AuthFlowProps {
   initialScreen?: AuthScreen;
   /** Called when the user leaves Authentication (e.g. after logging in). */
-  onExit: (destination: ExitDestination) => void;
+  onExit: (destination: ExitDestination, user?: AuthUser) => void;
   notice?: string | null;
 }
 

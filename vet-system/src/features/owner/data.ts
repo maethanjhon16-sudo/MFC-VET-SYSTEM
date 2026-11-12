@@ -96,7 +96,7 @@ export const SERVICES: Service[] = [
     id: 'home-service', name: 'Home Service', blurb: 'Vet visits at your door', emoji: '🏠', tone: 'sand', duration: '60 min',
     price: 800, priceUnit: 'per visit', category: 'comfort',
     headline: 'Vet visits at your door',
-    description: 'For anxious pets or busy owners: a licensed veterinarian visits you at home for check-ups, vaccines and minor treatments within Davao City.',
+    description: 'For anxious pets or busy owners: a licensed veterinarian visits you at home for check-ups, vaccines and minor treatments within Kidapawan City.',
     includes: ['Home consultation', 'Vaccines & deworming on site', 'Minor treatments', 'Records updated on the spot', 'No clinic stress for your pet'],
     doctorIds: ['reyes', 'ramos'], visit: '60 minutes per visit', nextSlot: 'Oct 24 · 1:00 PM',
   },
