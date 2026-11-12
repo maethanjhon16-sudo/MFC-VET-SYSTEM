@@ -140,6 +140,12 @@
 .confirmedNote { padding: 13px 15px; border-radius: 9px; color: #38744d; background: #eef6ec; font-size: 11px; }
 .message { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border: 1px solid #cfe4d2; border-radius: 8px; color: #2d6541; background: #eff8ef; font-size: 11px; }
 .message button { border: 0; color: inherit; background: transparent; font-size: 17px; }
+.patientActions { display: flex; align-items: center; gap: 10px; }
+.patientForm { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: end; gap: 10px; margin-bottom: 18px; padding: 14px; border: 1px solid #e7ece6; border-radius: 10px; background: #fafcf9; }
+.patientForm label { display: grid; gap: 6px; color: #64746a; font-size: 10px; font-weight: 700; }
+.patientForm input, .patientForm select { width: 100%; min-width: 0; height: 38px; padding: 0 10px; border: 1px solid #dce5dc; border-radius: 7px; color: #334238; background: #fff; font-size: 11px; }
+.patientForm > div { display: flex; align-items: center; gap: 8px; }
+.patientForm .primaryButton { min-height: 38px; }
 
 .layout { grid-template-columns: 264px minmax(0, 1fr); background: var(--color-off); }
 .sidebar { gap: 0; padding: 26px 20px 20px; background: var(--color-forest); }
@@ -276,4 +282,7 @@
   .profileGrid, .detailGrid { grid-template-columns: 1fr; }
   .profileHeader { align-items: flex-start; flex-wrap: wrap; }
   .profileHeader .secondaryButton { margin-left: auto; }
+  .patientActions { align-items: flex-start; flex-wrap: wrap; }
+  .patientForm { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .patientForm > div { grid-column: 1 / -1; }
 }

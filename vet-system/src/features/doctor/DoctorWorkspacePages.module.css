@@ -36,6 +36,7 @@
 .pending, .dueSoon, .lowstock { color: #8f5e0e; background: #fbefd6; }
 .inlab, .scheduled, .preparing, .outfordelivery { color: #2f7fa8; background: #dff0f8; }
 .reviewed, .final, .available, .delivered, .inStock { color: #2e8b57; background: #e1f1e6; }
+.profileonly { color: #59685d; background: #ecefea; }
 .overdue, .cancelled, .outofstock, .paused { color: #a14c43; background: #f9e3df; }
 .new { color: #7358b5; background: #ece6f7; }
 .empty { padding: 26px !important; color: #829087 !important; text-align: center; }

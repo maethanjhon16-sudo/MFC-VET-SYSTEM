@@ -82,7 +82,7 @@ type ClinicalRecord = {
   type: string;
   summary: string;
   date: string;
-  status: 'Final' | 'Pending';
+  status: 'Final' | 'Pending' | 'Profile only';
 };
 
 type LabResult = {
@@ -153,7 +153,7 @@ const ORDERS = [
 
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const ORDER_FILTERS = ['All', 'New', 'Preparing', 'Out for delivery', 'Delivered', 'Cancelled'];
-const RECORD_FILTERS = ['All records', 'Consultation', 'Vaccination', 'Procedure', 'Lab notes'];
+const RECORD_FILTERS = ['All records', 'Patient profile', 'Consultation', 'Vaccination', 'Procedure', 'Lab notes'];
 const LAB_FILTERS = ['All', 'Pending', 'In lab', 'Ready', 'Reviewed'];
 const FOLLOW_UP_FILTERS = ['All', 'Overdue', 'Due soon', 'Scheduled'];
 
@@ -283,11 +283,26 @@ export function DoctorWorkspacePages({
 }) {
   const [state, dispatch] = useReducer(workspaceReducer, undefined, createInitialState);
   const query = state.query.trim().toLowerCase();
-  const filteredRecords = useMemo(() => RECORDS.filter((record) => {
+  const allRecords = useMemo(() => [
+    ...RECORDS,
+    ...patients
+      .filter((patient) => !RECORDS.some((record) => record.patientId === patient.id))
+      .map((patient): ClinicalRecord => ({
+        id: `profile-${patient.id}`,
+        patientId: patient.id,
+        patient: patient.name,
+        owner: patient.owner,
+        type: 'Patient profile',
+        summary: 'Profile created. No clinical notes have been added yet.',
+        date: patient.lastVisit,
+        status: 'Profile only',
+      })),
+  ], [patients]);
+  const filteredRecords = useMemo(() => allRecords.filter((record) => {
     const matchesText = `${record.patient} ${record.owner} ${record.type} ${record.summary}`.toLowerCase().includes(query);
     const matchesType = state.filters.record === 'All records' || record.type === state.filters.record;
     return matchesText && matchesType;
-  }), [query, state.filters.record]);
+  }), [allRecords, query, state.filters.record]);
   const labRows = useMemo(() => LAB_RESULTS.map((result) => ({
     ...result,
     status: state.reviewedLabs.includes(result.id) ? 'Reviewed' : result.initialStatus,
@@ -337,9 +352,9 @@ export function DoctorWorkspacePages({
 
       {view === 'records' && <>
         <div className={styles.metrics}>
-          <article><span>Records in this preview</span><b>{RECORDS.length}</b><small>Across {patients.length} patient profiles</small></article>
-          <article><span>Created this month</span><b>{RECORDS.filter((record) => record.date.startsWith('Nov')).length}</b><small>Preview entries</small></article>
-          <article><span>Awaiting sign-off</span><b>{RECORDS.filter((record) => record.status === 'Pending').length}</b><small>Needs your review</small></article>
+          <article><span>Records and profiles</span><b>{allRecords.length}</b><small>Across {patients.length} patient profiles</small></article>
+          <article><span>Created this month</span><b>{allRecords.filter((record) => record.date.startsWith('Nov')).length}</b><small>Preview entries</small></article>
+          <article><span>Awaiting sign-off</span><b>{allRecords.filter((record) => record.status === 'Pending').length}</b><small>Needs your review</small></article>
           <article><span>Patient profiles</span><b>{patients.length}</b><small>In the local directory</small></article>
         </div>
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search by pet, owner or diagnosis..." /></div>
