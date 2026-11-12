@@ -17,6 +17,7 @@ async function request<T>(path: string, body?: unknown, method = 'POST'): Promis
     response = await fetch(path, {
       method,
       credentials: 'same-origin',
+      cache: 'no-store',
       ...(body === undefined
         ? {}
         : {
@@ -105,6 +106,7 @@ export interface BookingDoctor {
   id: string;
   fullName: string;
   specialization: string | null;
+  availability: DoctorAvailabilityDay[];
 }
 
 export type PetSpecies = 'Dog' | 'Cat' | 'Bird' | 'Rabbit' | 'Other';

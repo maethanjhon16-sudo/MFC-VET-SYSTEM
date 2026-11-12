@@ -214,15 +214,29 @@ function UpcomingAppointments({ nav }: { nav: OwnerNav }) {
 
   useEffect(() => {
     let active = true;
-    getOwnerAppointments().then(({ appointments }) => {
-      if (active) dispatch({ type: 'LOADED', appointments });
-    }).catch((error: unknown) => {
-      if (active) dispatch({
-        type: 'FAILED',
-        message: error instanceof Error ? error.message : 'Could not load upcoming appointments.',
+    const refresh = () => {
+      getOwnerAppointments().then(({ appointments }) => {
+        if (active) dispatch({ type: 'LOADED', appointments });
+      }).catch((error: unknown) => {
+        if (active) dispatch({
+          type: 'FAILED',
+          message: error instanceof Error ? error.message : 'Could not load upcoming appointments.',
+        });
       });
-    });
-    return () => { active = false; };
+    };
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) refresh();
+    };
+    refresh();
+    const timer = window.setInterval(refreshIfVisible, 30_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
   }, []);
 
   const upcoming = state.appointments

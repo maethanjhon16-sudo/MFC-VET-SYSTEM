@@ -217,7 +217,35 @@ async function doctorIsAvailable(doctorId, scheduledAt, durationMinutes) {
      FROM doctor_availability WHERE doctor_id = $1 AND weekday = $2`,
     [doctorId, weekday],
   );
-  return isWithinDoctorAvailability(scheduledAt, durationMinutes, result.rows[0]);
+  const availability = result.rows[0] ?? {
+    weekday,
+    is_available: weekday >= 1 && weekday <= 6,
+    starts_at: '08:00',
+    ends_at: '18:00',
+  };
+  return isWithinDoctorAvailability(date.toISOString(), durationMinutes, availability);
+}
+
+async function anyDoctorIsAvailable(scheduledAt, durationMinutes) {
+  const date = new Date(scheduledAt);
+  const weekdayName = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Manila',
+    weekday: 'short',
+  }).format(date);
+  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekdayName);
+  const result = await pool.query(
+    `SELECT COALESCE(a.weekday, $1)::smallint AS weekday,
+            COALESCE(a.is_available, $1 BETWEEN 1 AND 6) AS is_available,
+            COALESCE(a.starts_at, '08:00'::time) AS starts_at,
+            COALESCE(a.ends_at, '18:00'::time) AS ends_at
+     FROM users u
+     LEFT JOIN doctor_availability a ON a.doctor_id = u.id AND a.weekday = $1
+     WHERE u.role = 'doctor' AND u.status = 'active'`,
+    [weekday],
+  );
+  return result.rows.some((availability) =>
+    isWithinDoctorAvailability(date.toISOString(), durationMinutes, availability),
+  );
 }
 
 function appointmentDto(row) {
@@ -402,16 +430,26 @@ app.post('/api/auth/password-reset', requireSameOrigin, asyncRoute(async (_req, 
 
 app.get('/api/owner/doctors', requireOwner, asyncRoute(async (_req, res) => {
   const result = await pool.query(
-    `SELECT id, full_name, specialization
-     FROM users
-     WHERE role = 'doctor' AND status = 'active'
-     ORDER BY full_name ASC`,
+    `SELECT d.id, d.full_name, d.specialization,
+            json_agg(json_build_object(
+              'weekday', w.weekday,
+              'isAvailable', COALESCE(a.is_available, w.weekday BETWEEN 1 AND 6),
+              'startsAt', COALESCE(to_char(a.starts_at, 'HH24:MI'), '08:00'),
+              'endsAt', COALESCE(to_char(a.ends_at, 'HH24:MI'), '18:00')
+            ) ORDER BY w.weekday) AS availability
+     FROM users d
+     CROSS JOIN generate_series(0, 6) AS w(weekday)
+     LEFT JOIN doctor_availability a ON a.doctor_id = d.id AND a.weekday = w.weekday
+     WHERE d.role = 'doctor' AND d.status = 'active'
+     GROUP BY d.id
+     ORDER BY d.full_name ASC`,
   );
   res.json({
     doctors: result.rows.map((row) => ({
       id: row.id,
       fullName: row.full_name,
       specialization: row.specialization,
+      availability: row.availability,
     })),
   });
 }));
@@ -520,7 +558,7 @@ app.post('/api/owner/appointments', requireSameOrigin, requireOwner, appointment
     return res.status(400).json({ error: 'Choose a valid veterinarian or select any available veterinarian.' });
   }
   if (!isValidAppointmentTime(body.scheduledAt, service.durationMinutes)) {
-    return res.status(400).json({ error: 'Choose a future 30-minute slot during clinic hours (Monday–Saturday, 8:00 AM–6:00 PM) within the next 90 days.' });
+    return res.status(400).json({ error: 'Choose a future half-hour time within the next 90 days.' });
   }
   if (typeof notes !== 'string' || notes.trim().length > 500) {
     return res.status(400).json({ error: 'Visit notes must be 500 characters or fewer.' });
@@ -542,6 +580,8 @@ app.post('/api/owner/appointments', requireSameOrigin, requireOwner, appointment
     if (!await doctorIsAvailable(doctorId, body.scheduledAt, service.durationMinutes)) {
       return res.status(400).json({ error: 'That veterinarian is unavailable at the selected date and time.' });
     }
+  } else if (!await anyDoctorIsAvailable(body.scheduledAt, service.durationMinutes)) {
+    return res.status(400).json({ error: 'No active veterinarian is available at the selected date and time.' });
   }
 
   const result = await pool.query(
@@ -974,6 +1014,35 @@ app.put('/api/staff/availability', requireSameOrigin, requireClinicalStaff, asyn
   if (!validDays || new Set(days.map((day) => day.weekday)).size !== 7) {
     return res.status(400).json({ error: 'Enter valid, unique hours for each weekday.' });
   }
+  const confirmedAppointments = await pool.query(
+    `SELECT scheduled_at, duration_minutes
+     FROM appointments
+     WHERE doctor_id = $1 AND status = 'confirmed' AND scheduled_at > now()`,
+    [req.user.id],
+  );
+  const conflicts = confirmedAppointments.rows.filter((appointment) => {
+    const weekdayName = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Manila',
+      weekday: 'short',
+    }).format(appointment.scheduled_at);
+    const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekdayName);
+    const day = days.find((item) => item.weekday === weekday);
+    return !day || !isWithinDoctorAvailability(
+      appointment.scheduled_at.toISOString(),
+      appointment.duration_minutes,
+      {
+        weekday: day.weekday,
+        is_available: day.isAvailable,
+        starts_at: day.startsAt,
+        ends_at: day.endsAt,
+      },
+    );
+  });
+  if (conflicts.length > 0) {
+    return res.status(409).json({
+      error: 'These hours conflict with confirmed appointments. Resolve those appointments before saving the new availability.',
+    });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -1101,6 +1170,11 @@ app.post('/api/staff/appointments/:id/decision', requireSameOrigin, requireClini
     }
 
     if (status === 'confirmed') {
+      if (!await doctorIsAvailable(doctorId, appointment.scheduled_at, appointment.duration_minutes)) {
+        await client.query('ROLLBACK');
+        transactionOpen = false;
+        return res.status(409).json({ error: 'The veterinarian is no longer available at that time. Choose another appointment time or veterinarian.' });
+      }
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [doctorId]);
       const conflict = await client.query(
         `SELECT id FROM appointments

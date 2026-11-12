@@ -299,6 +299,22 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
     void loadPatients();
   }, [loadPatients, loadSchedule]);
 
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
+      void loadSchedule();
+      void loadPatients();
+    };
+    const timer = window.setInterval(refreshIfVisible, 30_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
+  }, [loadPatients, loadSchedule]);
+
   const pendingCount = state.appointments.filter((item) => item.status === 'Pending').length;
   const appointmentsToday = state.appointments.filter((item) => item.date === today && item.status !== 'Declined');
   const upcomingConfirmed = state.appointments.filter((item) => item.date >= today && item.status === 'Confirmed').length;
