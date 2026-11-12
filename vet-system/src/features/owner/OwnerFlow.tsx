@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useReducer } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import { OwnerShell } from '../../components/owner/OwnerShell';
-import { getProduct, getService } from './data';
+import { getProduct, getService, PRODUCTS } from './data';
 import { cartCount, createInitialState, ownerReducer } from './ownerReducer';
 import { ComingSoon } from './screens/ComingSoon';
 import { OwnerHome } from './screens/OwnerHome';
@@ -9,12 +9,19 @@ import { OwnerShop } from './screens/OwnerShop';
 import { ProductDetails } from './screens/ProductDetails';
 import { ServiceDetails } from './screens/ServiceDetails';
 import { AppointmentBooking, OwnerAppointments } from './screens/AppointmentScreens';
+import { OwnerCart, OwnerOrders } from './screens/OwnerCommerceScreens';
+import { OwnerHelp, OwnerNotifications, OwnerProfileScreen } from './screens/OwnerAccountScreens';
+import { OwnerMessages, OwnerMedicalRecords } from './screens/OwnerHealthScreens';
+import { OwnerPetProfile } from './screens/OwnerPetProfile';
 import type { NavKey, OwnerNav, OwnerScreen } from './types';
+import type { CartLine } from './types';
 import s from './screens/Screens.module.css';
 
 interface OwnerFlowProps {
   initialScreen?: OwnerScreen;
+  ownerId: string;
   ownerName: string;
+  onOwnerNameUpdated: (name: string) => void;
   /** Called when the owner signs out. */
   onSignOut: () => void;
 }
@@ -25,13 +32,50 @@ const ACTIVE_NAV: Record<OwnerScreen, NavKey | null> = {
   'service-details': 'actions',
   'appointment-booking': 'actions',
   'owner-appointments': 'schedule',
+  'owner-pet-profile': null,
+  'owner-records': null,
+  'owner-messages': null,
+  'owner-cart': null,
+  'owner-orders': 'shop',
+  'owner-profile': null,
+  'owner-notifications': null,
+  'owner-help': null,
   'owner-shop': 'shop',
   'product-details': 'shop',
   'coming-soon': null,
 };
 
-export function OwnerFlow({ initialScreen = 'owner-home', ownerName, onSignOut }: OwnerFlowProps) {
+const CART_STORAGE_PREFIX = 'mfc-owner-cart:';
+
+function isCartLine(value: unknown): value is CartLine {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const line = value as Record<string, unknown>;
+  if (typeof line.productId !== 'string') return false;
+  const product = PRODUCTS.find((item) => item.id === line.productId);
+  return Boolean(
+    product
+    && typeof line.sizeIndex === 'number'
+    && Number.isInteger(line.sizeIndex)
+    && line.sizeIndex >= 0
+    && line.sizeIndex < product.sizes.length
+    && typeof line.qty === 'number'
+    && Number.isInteger(line.qty)
+    && line.qty >= 1
+    && line.qty <= 20,
+  );
+}
+
+function readStoredCart(value: string | null): CartLine[] {
+  if (!value) return [];
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(isCartLine);
+}
+
+export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, onOwnerNameUpdated, onSignOut }: OwnerFlowProps) {
   const [state, dispatch] = useReducer(ownerReducer, initialScreen, createInitialState);
+  const [cartReady, setCartReady] = useState(false);
+  const [cartStorageError, setCartStorageError] = useState<string | null>(null);
 
   const nav = useMemo<OwnerNav>(
     () => ({
@@ -42,10 +86,42 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerName, onSignOut }
       product: (id) => dispatch({ type: 'OPEN_PRODUCT', id }),
       book: (serviceId) => dispatch({ type: 'GO_BOOKING', serviceId }),
       appointments: () => dispatch({ type: 'GO_APPOINTMENTS' }),
+      pet: (id) => dispatch({ type: 'GO_PET_PROFILE', id }),
+      records: (petId) => dispatch({ type: 'GO_RECORDS', petId }),
+      messages: () => dispatch({ type: 'GO_MESSAGES' }),
+      cart: () => dispatch({ type: 'GO_CART' }),
+      orders: () => dispatch({ type: 'GO_ORDERS' }),
+      profile: () => dispatch({ type: 'GO_PROFILE' }),
+      notifications: () => dispatch({ type: 'GO_NOTIFICATIONS' }),
+      help: () => dispatch({ type: 'GO_HELP' }),
       soon: (label) => dispatch({ type: 'GO_SOON', label }),
     }),
     [],
   );
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(`${CART_STORAGE_PREFIX}${ownerId}`);
+      dispatch({ type: 'RESTORE_CART', cart: readStoredCart(saved) });
+      setCartStorageError(null);
+    } catch (error) {
+      setCartStorageError(error instanceof Error ? error.message : 'Cart storage is unavailable in this browser.');
+    } finally {
+      setCartReady(true);
+    }
+  }, [ownerId]);
+
+  useEffect(() => {
+    if (!cartReady) return;
+    try {
+      const key = `${CART_STORAGE_PREFIX}${ownerId}`;
+      if (state.cart.length) window.localStorage.setItem(key, JSON.stringify(state.cart));
+      else window.localStorage.removeItem(key);
+      setCartStorageError(null);
+    } catch (error) {
+      setCartStorageError(error instanceof Error ? error.message : 'Cart changes could not be saved in this browser.');
+    }
+  }, [cartReady, ownerId, state.cart]);
 
   // New page → start at the top.
   useEffect(() => {
@@ -69,7 +145,9 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerName, onSignOut }
       cartCount={cartCount(state.cart)}
       query={state.screen === 'owner-shop' ? state.shopQuery : ''}
       onSearch={(query) => dispatch({ type: 'GO_SHOP', query })}
+      onSignOut={onSignOut}
     >
+      {cartStorageError && <p className={s.pageError} role="alert">Your cart could not be saved on this device. {cartStorageError}</p>}
       {state.screen === 'owner-home' && <OwnerHome nav={nav} ownerName={ownerName} />}
       {state.screen === 'owner-services' && (
         <OwnerServices nav={nav} chip={state.servicesChip} onChip={(chip) => dispatch({ type: 'SET_SERVICES_CHIP', chip })} />
@@ -78,6 +156,7 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerName, onSignOut }
       {state.screen === 'appointment-booking' && (
         <AppointmentBooking
           serviceId={state.serviceId}
+          initialPetId={state.bookingPetId}
           onCancel={nav.appointments}
           onBooked={nav.appointments}
           onManagePets={nav.home}
@@ -86,6 +165,23 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerName, onSignOut }
       {state.screen === 'owner-appointments' && (
         <OwnerAppointments onBook={() => nav.book()} onCancel={() => nav.home()} />
       )}
+      {state.screen === 'owner-pet-profile' && <OwnerPetProfile id={state.petId} nav={nav} />}
+      {state.screen === 'owner-records' && <OwnerMedicalRecords key={state.petId} nav={nav} initialPetId={state.petId} />}
+      {state.screen === 'owner-messages' && <OwnerMessages ownerId={ownerId} />}
+      {state.screen === 'owner-cart' && (
+        <OwnerCart
+          cart={state.cart}
+          onQuantity={(line, quantity) => dispatch({ type: 'SET_CART_QTY', productId: line.productId, sizeIndex: line.sizeIndex, qty: quantity })}
+          onRemove={(line) => dispatch({ type: 'REMOVE_CART_LINE', productId: line.productId, sizeIndex: line.sizeIndex })}
+          onClear={() => dispatch({ type: 'CLEAR_CART' })}
+          onContinueShopping={() => nav.shop()}
+          onOrderPlaced={nav.orders}
+        />
+      )}
+      {state.screen === 'owner-orders' && <OwnerOrders nav={nav} />}
+      {state.screen === 'owner-profile' && <OwnerProfileScreen onNameUpdated={onOwnerNameUpdated} />}
+      {state.screen === 'owner-notifications' && <OwnerNotifications nav={nav} />}
+      {state.screen === 'owner-help' && <OwnerHelp nav={nav} />}
       {state.screen === 'owner-shop' && (
         <OwnerShop
           nav={nav}
@@ -114,6 +210,10 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerName, onSignOut }
           onTab={(tab) => dispatch({ type: 'SET_TAB', tab })}
           onThumb={(index) => dispatch({ type: 'SET_THUMB', index })}
           onAdd={() => dispatch({ type: 'ADD_TO_CART', productId: product.id, sizeIndex: state.sizeIndex, qty: state.qty })}
+          onBuyNow={() => {
+            dispatch({ type: 'ADD_TO_CART', productId: product.id, sizeIndex: state.sizeIndex, qty: state.qty });
+            nav.cart();
+          }}
         />
       )}
       {state.screen === 'coming-soon' && <ComingSoon nav={nav} label={state.soonLabel} cart={state.cart} onSignOut={onSignOut} />}
@@ -121,7 +221,7 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerName, onSignOut }
       {state.toast && (
         <div className={s.toast} role="status">
           {state.toast}
-          <button type="button" onClick={() => nav.soon('Cart')}>View cart</button>
+          <button type="button" onClick={nav.cart}>View cart</button>
         </div>
       )}
     </OwnerShell>

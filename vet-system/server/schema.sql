@@ -180,10 +180,22 @@ CREATE TABLE IF NOT EXISTS orders (
   owner_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   status text NOT NULL CHECK (status IN ('new', 'preparing', 'out_for_delivery', 'delivered', 'cancelled')),
   payment_method text NOT NULL,
+  fulfillment_method text NOT NULL DEFAULT 'clinic_pickup',
+  delivery_address text NOT NULL DEFAULT '',
+  contact_phone text NOT NULL DEFAULT '',
   total_amount numeric(10, 2) NOT NULL CHECK (total_amount >= 0),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE orders
+  ADD COLUMN IF NOT EXISTS fulfillment_method text NOT NULL DEFAULT 'clinic_pickup';
+
+ALTER TABLE orders
+  ADD COLUMN IF NOT EXISTS delivery_address text NOT NULL DEFAULT '';
+
+ALTER TABLE orders
+  ADD COLUMN IF NOT EXISTS contact_phone text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS order_items (
   id text PRIMARY KEY,

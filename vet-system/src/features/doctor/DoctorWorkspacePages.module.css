@@ -28,6 +28,9 @@
 .table th { padding: 12px 14px; color: #718078; background: #f0f3ef; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
 .table td { padding: 12px 14px; border-top: 1px solid #e8ece7; color: #526259; vertical-align: middle; }
 .table tbody tr:hover { background: #fbfcfa; }
+.table td small { display: block; margin-top: 4px; color: #718078; font-size: 10px; }
+.orderStatusSelect { max-width: 150px; min-height: 34px; padding: 0 8px; border: 1px solid var(--color-line); border-radius: 8px; color: var(--color-ink); background: #fff; font: inherit; font-size: 10px; text-transform: capitalize; }
+.orderStatusSelect:disabled { opacity: .7; }
 .patientLink { display: grid; gap: 4px; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; }
 .patientLink b { color: var(--color-ink); font-size: 11px; }
 .patientLink small, .muted { color: #839087; font-size: 10px; }

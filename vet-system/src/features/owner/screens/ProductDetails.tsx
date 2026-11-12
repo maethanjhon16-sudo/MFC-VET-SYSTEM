@@ -14,6 +14,7 @@ interface ProductDetailsProps {
   qty: number;
   tab: ProductTab;
   thumb: number;
+  onBuyNow: () => void;
   onSize: (index: number) => void;
   onQty: (delta: number) => void;
   onTab: (tab: ProductTab) => void;
@@ -22,12 +23,12 @@ interface ProductDetailsProps {
 }
 
 const DELIVERY = [
-  { icon: 'truck', text: 'Free delivery on orders above ₱1,500' },
-  { icon: 'info-shield', text: 'Vet-approved formula · 100% authentic' },
-  { icon: 'info-clock', text: `Delivered in 2–3 days within ${CLINIC_CITY}` },
+  { icon: 'truck', text: `Delivery available in ${CLINIC_CITY}; fee confirmed by the clinic` },
+  { icon: 'info-shield', text: 'The clinic confirms stock and the final total before fulfillment' },
+  { icon: 'info-clock', text: 'Delivery timing is confirmed after the clinic reviews your request' },
 ] as const;
 
-export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onSize, onQty, onTab, onThumb, onAdd }: ProductDetailsProps) {
+export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onBuyNow, onSize, onQty, onTab, onThumb, onAdd }: ProductDetailsProps) {
   const price = product.price * (product.sizes[sizeIndex]?.multiplier ?? 1);
   // Gallery: the product itself plus three related "photos" from the design.
   const gallery = [
@@ -79,7 +80,7 @@ export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onSiz
 
         <div className={s.productInfo}>
           <div className={s.ratingRow}>
-            <span className={`${s.badge} ${s.badgeOk}`} style={{ color: 'var(--color-ok)' }}>In stock</span>
+            <span className={`${s.badge} ${s.badgeSage}`}>Order request</span>
             <Icon name="star-lg" size={16} />
             {product.rating.toFixed(1)}
             <span>({product.reviews} reviews)</span>
@@ -115,7 +116,7 @@ export function ProductDetails({ nav, product, sizeIndex, qty, tab, thumb, onSiz
               <Icon name="btn-cart-white" size={18} />
               Add to Cart
             </button>
-            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => nav.soon('Checkout')}>
+            <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={onBuyNow}>
               Buy Now
             </button>
           </div>

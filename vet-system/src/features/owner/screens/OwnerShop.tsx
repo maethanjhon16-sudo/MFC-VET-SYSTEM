@@ -48,11 +48,11 @@ export function OwnerShop({ nav, chip, query, sort, sortOpen, cartCount, onChip,
           <p>Food, vitamins, grooming and accessories — delivered from the clinic.</p>
         </div>
         <div className={s.headerActions}>
-          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => nav.soon('Cart')}>
+          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={nav.cart}>
             <Icon name="btn-cart" size={18} />
             View Cart{cartCount > 0 ? ` (${cartCount})` : ''}
           </button>
-          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => nav.soon('Order History')}>
+          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={nav.orders}>
             <Icon name="btn-bag" size={18} />
             Order History
           </button>
@@ -70,9 +70,18 @@ export function OwnerShop({ nav, chip, query, sort, sortOpen, cartCount, onChip,
             onChange={(e) => onQuery(e.target.value)}
           />
         </label>
-        <button type="button" className={`${s.btn} ${s.btn50} ${s.btnSecondary}`} onClick={() => nav.soon('Filters')}>
+        <button
+          type="button"
+          className={`${s.btn} ${s.btn50} ${s.btnSecondary}`}
+          disabled={!filtering}
+          onClick={() => {
+            onChip('all');
+            onQuery('');
+            onSort('Popular');
+          }}
+        >
           <Icon name="filter" size={18} />
-          Filters
+          Clear filters
         </button>
         <div className={s.sortWrap}>
           <button
@@ -146,10 +155,10 @@ export function OwnerShop({ nav, chip, query, sort, sortOpen, cartCount, onChip,
               <Icon name="ellipse-shop" size={380} />
             </div>
             <div className={s.heroText} style={{ gap: 14, padding: 56 }}>
-              <span className={`${s.badge} ${s.badgeSky}`}>This week</span>
-              <h2 className={s.heroTitle} style={{ fontSize: 34 }}>Free delivery on orders above ₱1,500</h2>
+              <span className={`${s.badge} ${s.badgeSky}`}>Clinic shop</span>
+              <h2 className={s.heroTitle} style={{ fontSize: 34 }}>Everyday essentials for happier, healthier pets</h2>
               <p className={s.heroSub} style={{ width: 560, fontSize: 15, lineHeight: '23px', color: '#eadbc4' }}>
-                Premium dog &amp; cat food, vitamins and grooming essentials — restocked weekly.
+                Browse clinic products. The care team confirms stock, delivery fees, and fulfillment before completing an order.
               </p>
               <button type="button" className={`${s.btn} ${s.btnWhite}`} style={{ width: 190 }} onClick={() => onChip('dog-food')}>
                 Shop Dog Food

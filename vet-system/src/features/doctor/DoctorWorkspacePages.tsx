@@ -23,6 +23,7 @@ import {
     saveStaffPreferences,
     startStaffConversation,
     updateStaffProfile,
+    updateStaffOrderStatus,
   type ClinicalRecord as ApiClinicalRecord,
   type ClinicServiceSetting,
   type DoctorAvailabilityDay,
@@ -61,7 +62,6 @@ type Patient = {
   lastVisit: string;
   note: string;
 };
-
 type Appointment = {
   id: string;
   owner: string;
@@ -133,6 +133,7 @@ type WorkspaceAction =
   | { type: 'LAB_REVIEWED'; labResult: Pick<ApiLabResult, 'id' | 'status' | 'reviewedAt'> }
   | { type: 'SERVICE_UPDATED'; service: ClinicServiceSetting }
   | { type: 'INVENTORY_UPDATED'; item: InventoryItem }
+  | { type: 'ORDER_UPDATED'; order: Pick<StaffOrder, 'id' | 'status'> }
   | { type: 'AVAILABILITY_UPDATED'; days: DoctorAvailabilityDay[] }
   | { type: 'PREFERENCES_UPDATED'; preferences: DoctorNotificationSettings }
   | { type: 'PROFILE_UPDATED'; profile: StaffProfile }
@@ -166,6 +167,10 @@ type ClinicalRecord = {
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const WEEKDAY_NUMBERS = [1, 2, 3, 4, 5, 6, 0];
 const ORDER_FILTERS = ['All', 'New', 'Preparing', 'Out for delivery', 'Delivered', 'Cancelled'];
+const ORDER_STATUSES: StaffOrder['status'][] = ['new', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'];
+function isOrderStatus(value: string): value is StaffOrder['status'] {
+  return ORDER_STATUSES.some((status) => status === value);
+}
 const RECORD_FILTERS = ['All records', 'Patient profile', 'Consultation', 'Vaccination', 'Procedure', 'Lab notes'];
 const LAB_FILTERS = ['All', 'Pending', 'In lab', 'Ready', 'Reviewed'];
 const FOLLOW_UP_FILTERS = ['All', 'Overdue', 'Due soon', 'Scheduled'];
@@ -249,6 +254,8 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
       return { ...state, services: state.services.map((item) => item.serviceId === action.service.serviceId ? action.service : item), serviceAvailability: { ...state.serviceAvailability, [action.service.serviceId]: action.service.isEnabled }, saving: false, actionError: null, notice: 'Service availability saved.' };
     case 'INVENTORY_UPDATED':
       return { ...state, inventory: [...state.inventory.filter((item) => item.productId !== action.item.productId), action.item], stockLevels: { ...state.stockLevels, [action.item.productId]: action.item.quantity }, saving: false, actionError: null, notice: 'Inventory quantity saved.' };
+    case 'ORDER_UPDATED':
+      return { ...state, orders: state.orders.map((item) => item.id === action.order.id ? { ...item, status: action.order.status } : item), saving: false, actionError: null, notice: 'Order status updated.' };
     case 'AVAILABILITY_UPDATED':
       return { ...state, availability: action.days, activeDays: Object.fromEntries(action.days.map((day) => [String(day.weekday), day.isAvailable])), saving: false, actionError: null, notice: 'Availability saved.' };
     case 'PREFERENCES_UPDATED':
@@ -522,6 +529,15 @@ export function DoctorWorkspacePages({
       dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not save this inventory quantity.' });
     }
   };
+  const updateOrder = async (orderId: string, status: StaffOrder['status']) => {
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { order } = await updateStaffOrderStatus(orderId, status);
+      dispatch({ type: 'ORDER_UPDATED', order });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not update this order status.' });
+    }
+  };
   const saveAvailability = async () => {
     dispatch({ type: 'SAVING', value: true });
     try {
@@ -764,8 +780,36 @@ export function DoctorWorkspacePages({
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search by order number or customer..." /></div>
         <FilterButtons values={ORDER_FILTERS} selected={state.filters.order} onSelect={(value) => dispatch({ type: 'SET_FILTER', key: 'order', value })} />
         <div className={styles.tableWrap}><table className={styles.table}>
-          <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead>
-          <tbody>{visibleOrders.map((order) => <tr key={order.id}><td><b>#{order.id}</b></td><td>{order.customerName}</td><td className={styles.summaryCell}>{order.items.map((item) => `${item.quantity} × ${item.productName}`).join(', ')}</td><td><b>{formatPeso(Number(order.totalAmount))}</b></td><td>{order.paymentMethod}</td><td><Status>{order.status.replaceAll('_', ' ')}</Status></td></tr>)}{visibleOrders.length === 0 && <tr><td colSpan={6} className={styles.empty}>No saved orders match this filter.</td></tr>}</tbody>
+          <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Fulfillment</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead>
+          <tbody>{visibleOrders.map((order) => {
+            const nextStatuses: StaffOrder['status'][] = order.status === 'new'
+              ? ['preparing', 'cancelled']
+              : order.status === 'preparing'
+                ? order.fulfillmentMethod === 'delivery' ? ['out_for_delivery', 'cancelled'] : ['delivered', 'cancelled']
+                : order.status === 'out_for_delivery' ? ['delivered'] : [];
+            return <tr key={order.id}>
+              <td><b>#{order.id}</b></td>
+              <td>{order.customerName}<small>{order.contactPhone}</small></td>
+              <td className={styles.summaryCell}>{order.items.map((item) => `${item.quantity} × ${item.productName}`).join(', ')}</td>
+              <td className={styles.summaryCell}>{order.fulfillmentMethod === 'delivery' ? `Delivery · ${order.deliveryAddress}` : 'Clinic pickup'}</td>
+              <td><b>{formatPeso(Number(order.totalAmount))}</b></td>
+              <td>{order.paymentMethod.replaceAll('_', ' ')}</td>
+              <td>
+                <select
+                  className={styles.orderStatusSelect}
+                  aria-label={`Update order ${order.id} status`}
+                  value={order.status}
+                  disabled={state.saving || nextStatuses.length === 0}
+                  onChange={(event) => {
+                    if (isOrderStatus(event.target.value)) void updateOrder(order.id, event.target.value);
+                  }}
+                >
+                  <option value={order.status}>{order.status.replaceAll('_', ' ')}</option>
+                  {nextStatuses.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
+                </select>
+              </td>
+            </tr>;
+          })}{visibleOrders.length === 0 && <tr><td colSpan={7} className={styles.empty}>No saved orders match this filter.</td></tr>}</tbody>
         </table></div>
       </>}
 

@@ -1,14 +1,30 @@
+import { useEffect, useState } from 'react';
 import { Icon } from '../../../components/ui/Icon';
 import { Photo } from '../../../components/owner/Photo';
 import { RailSection, ServiceMiniCard } from '../../../components/owner/OwnerParts';
+import { getBookingDoctors, type BookingDoctor } from '../../auth/api';
 import { CLINIC_ADDRESS } from '../../clinicInfo';
-import { DOCTORS, SERVICES } from '../data';
+import { SERVICES } from '../data';
 import { formatPeso, type OwnerNav, type Service } from '../types';
 import s from './Screens.module.css';
 
 export function ServiceDetails({ nav, service }: { nav: OwnerNav; service: Service }) {
-  const doctors = DOCTORS.filter((d) => service.doctorIds.includes(d.id));
+  const [doctors, setDoctors] = useState<BookingDoctor[]>([]);
+  const [doctorError, setDoctorError] = useState<string | null>(null);
   const others = SERVICES.filter((x) => x.id !== service.id);
+
+  useEffect(() => {
+    let active = true;
+    getBookingDoctors().then(({ doctors: loaded }) => {
+      if (active) {
+        setDoctors(loaded);
+        setDoctorError(null);
+      }
+    }).catch((error: unknown) => {
+      if (active) setDoctorError(error instanceof Error ? error.message : 'Could not load clinic veterinarians.');
+    });
+    return () => { active = false; };
+  }, []);
 
   return (
     <div className={s.stack}>
@@ -41,16 +57,18 @@ export function ServiceDetails({ nav, service }: { nav: OwnerNav; service: Servi
           </section>
 
           <section className={`${s.card} ${s.panel}`} style={{ gap: 16 }}>
-            <h2>Doctors offering this service</h2>
+            <h2>Active clinic veterinarians</h2>
             <div className={s.doctors}>
-              {doctors.map((d) => (
-                <button key={d.id} type="button" className={s.doctor} onClick={() => nav.soon('Messages')}>
-                  <Photo emoji={d.emoji} tone="sage" size={23} width={44} height={44} radius={99} />
+              {doctorError && <p className={s.pageError} role="alert">{doctorError}</p>}
+              {!doctorError && doctors.length === 0 && <p className={s.empty}>No active veterinarians are listed right now.</p>}
+              {doctors.map((doctor) => (
+                <div key={doctor.id} className={s.doctor}>
+                  <Photo emoji="👩‍⚕️" tone="sage" size={23} width={44} height={44} radius={99} />
                   <span>
-                    <b>{d.name}</b>
-                    <span>{d.specialty}</span>
+                    <b>{doctor.fullName}</b>
+                    <span>{doctor.specialization || 'Veterinarian'}</span>
                   </span>
-                </button>
+                </div>
               ))}
             </div>
           </section>
@@ -67,7 +85,7 @@ export function ServiceDetails({ nav, service }: { nav: OwnerNav; service: Servi
             { icon: 'info-clock', text: service.visit },
             { icon: 'info-pin', text: CLINIC_ADDRESS },
             { icon: 'info-shield', text: 'Licensed veterinarians' },
-            { icon: 'info-calendar', text: `Next slot: ${service.nextSlot}` },
+            { icon: 'info-calendar', text: 'Choose a date to see current appointment availability' },
           ].map((line) => (
             <div key={line.icon} className={s.infoLine}>
               <span className={s.infoIcon}><Icon name={line.icon as 'info-clock'} size={16} /></span>
@@ -78,7 +96,7 @@ export function ServiceDetails({ nav, service }: { nav: OwnerNav; service: Servi
             <Icon name="btn-calendar" size={18} />
             Book Service
           </button>
-          <button type="button" className={`${s.btn} ${s.btnMid} ${s.btnSecondary} ${s.btnFull}`} onClick={() => nav.soon('Messages')}>
+          <button type="button" className={`${s.btn} ${s.btnMid} ${s.btnSecondary} ${s.btnFull}`} onClick={nav.messages}>
             <Icon name="chat-sm" size={18} />
             Message the Clinic
           </button>

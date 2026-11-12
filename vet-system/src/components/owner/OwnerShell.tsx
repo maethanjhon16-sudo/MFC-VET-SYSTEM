@@ -1,4 +1,4 @@
-import type { FormEvent, ReactNode } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { Icon } from '../ui/Icon';
 import { CLINIC_ADDRESS } from '../../features/clinicInfo';
 import type { NavKey, OwnerNav } from '../../features/owner/types';
@@ -12,6 +12,7 @@ interface OwnerShellProps {
   onSearch: (query: string) => void;
   /** Search box text, so the header stays in sync with the shop search. */
   query?: string;
+  onSignOut: () => void;
   children: ReactNode;
 }
 
@@ -30,13 +31,18 @@ const ITEMS: NavItem[] = [
   { key: 'menu', label: 'Menu', icon: 'nav-menu' },
 ];
 
-export function OwnerShell({ active, nav, ownerName, cartCount, onSearch, query = '', children }: OwnerShellProps) {
+export function OwnerShell({ active, nav, ownerName, cartCount, onSearch, query = '', onSignOut, children }: OwnerShellProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const go = (key: NavKey) => {
+    if (key === 'menu') {
+      setMenuOpen((open) => !open);
+      return;
+    }
+    setMenuOpen(false);
     if (key === 'home') nav.home();
     else if (key === 'actions') nav.services();
     else if (key === 'shop') nav.shop();
-    else if (key === 'schedule') nav.appointments();
-    else nav.soon('Owner Menu');
+    else nav.appointments();
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -60,16 +66,29 @@ export function OwnerShell({ active, nav, ownerName, cartCount, onSearch, query 
           {ITEMS.map((item) => {
             const on = item.key === active;
             return (
-              <button
-                key={item.key}
-                type="button"
-                className={`${styles.navItem} ${on ? styles.navOn : ''}`}
-                aria-current={on ? 'page' : undefined}
-                onClick={() => go(item.key)}
-              >
-                <Icon name={on && item.activeIcon ? item.activeIcon : item.icon} size={20} />
-                {item.label}
-              </button>
+              <span className={item.key === 'menu' ? styles.menuWrap : undefined} key={item.key}>
+                <button
+                  type="button"
+                  className={`${styles.navItem} ${on ? styles.navOn : ''}`}
+                  aria-current={on ? 'page' : undefined}
+                  aria-expanded={item.key === 'menu' ? menuOpen : undefined}
+                  aria-controls={item.key === 'menu' ? 'owner-menu' : undefined}
+                  onClick={() => go(item.key)}
+                >
+                  <Icon name={on && item.activeIcon ? item.activeIcon : item.icon} size={20} />
+                  {item.label}
+                </button>
+                {item.key === 'menu' && menuOpen && (
+                  <div className={styles.menuPopover} id="owner-menu" role="menu" aria-label="Owner menu">
+                    <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); nav.profile(); }}>My profile</button>
+                    <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); nav.records(); }}>Pet records</button>
+                    <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); nav.orders(); }}>Order history</button>
+                    <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); nav.notifications(); }}>Notifications</button>
+                    <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); nav.help(); }}>Help &amp; contact</button>
+                    <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); void onSignOut(); }}>Sign out</button>
+                  </div>
+                )}
+              </span>
             );
           })}
         </nav>
@@ -78,21 +97,19 @@ export function OwnerShell({ active, nav, ownerName, cartCount, onSearch, query 
           <form className={styles.search} onSubmit={submit} role="search">
             <Icon name="search" size={18} />
             {/* key remounts the uncontrolled input when the shop query changes elsewhere */}
-            <input key={query} name="q" defaultValue={query} placeholder="Search pets, products…" aria-label="Search pets, products" />
+            <input key={query} name="q" defaultValue={query} placeholder="Search products…" aria-label="Search products" />
           </form>
-          <button type="button" className={styles.iconBtn} aria-label="Cart" onClick={() => nav.soon('Cart')}>
+          <button type="button" className={styles.iconBtn} aria-label={`Cart${cartCount > 0 ? `, ${cartCount} items` : ''}`} onClick={nav.cart}>
             <Icon name="cart" size={20} />
             {cartCount > 0 && <span className={styles.count}>{cartCount}</span>}
           </button>
-          <button type="button" className={styles.iconBtn} aria-label="Messages" onClick={() => nav.soon('Messages')}>
+          <button type="button" className={styles.iconBtn} aria-label="Messages" onClick={nav.messages}>
             <Icon name="chat" size={20} />
-            <span className={styles.dot} />
           </button>
-          <button type="button" className={styles.iconBtn} aria-label="Notifications" onClick={() => nav.soon('Notifications')}>
+          <button type="button" className={styles.iconBtn} aria-label="Notifications" onClick={nav.notifications}>
             <Icon name="bell" size={20} />
-            <span className={styles.dot} />
           </button>
-          <button type="button" className={styles.profile} onClick={() => nav.soon('Owner Menu')}>
+          <button type="button" className={styles.profile} onClick={() => { setMenuOpen(false); nav.profile(); }}>
             <span className={styles.avatar} aria-hidden="true">{initials}</span>
             <span className={styles.profileName} title={ownerName}>{ownerName}</span>
           </button>
@@ -112,7 +129,7 @@ export function OwnerShell({ active, nav, ownerName, cartCount, onSearch, query 
           <Icon name="info-pin" size={16} />
           <span>{CLINIC_ADDRESS}</span>
         </p>
-        <button type="button" className={styles.help} onClick={() => nav.soon('Help & Contact')}>
+        <button type="button" className={styles.help} onClick={nav.help}>
           Help &amp; Contact
         </button>
       </footer>

@@ -28,7 +28,7 @@ export function OwnerServices({ nav, chip, onChip }: OwnerServicesProps) {
           <p>Eight ways we care for your pet — explore a service or book in a few clicks.</p>
         </div>
         <div className={s.headerActions}>
-          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={() => nav.soon('Messages')}>
+          <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={nav.messages}>
             <Icon name="chat-sm" size={18} />
             Message Clinic
           </button>
@@ -47,7 +47,7 @@ export function OwnerServices({ nav, chip, onChip }: OwnerServicesProps) {
           <span className={`${s.badge} ${s.badgeLav}`}>Most booked</span>
           <h2 className={s.heroTitle} style={{ fontSize: 34 }}>Annual wellness check-up</h2>
           <p className={s.heroSub} style={{ width: 560, fontSize: 15, lineHeight: '23px', color: 'var(--color-sagemid)' }}>
-            Full physical exam, weight check and vaccine review with Dr. Andrea Reyes.
+            Full physical exam, weight check and vaccine review with a licensed veterinarian.
           </p>
           <button
             type="button"
