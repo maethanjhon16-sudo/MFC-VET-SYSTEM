@@ -8,7 +8,7 @@ import { SERVICES } from '../data';
 import { formatPeso, type OwnerNav, type Service } from '../types';
 import s from './Screens.module.css';
 
-export function ServiceDetails({ nav, service }: { nav: OwnerNav; service: Service }) {
+export function ServiceDetails({ nav, service, isEnabled }: { nav: OwnerNav; service: Service; isEnabled: boolean }) {
   const [doctors, setDoctors] = useState<BookingDoctor[]>([]);
   const [doctorError, setDoctorError] = useState<string | null>(null);
   const others = SERVICES.filter((x) => x.id !== service.id);
@@ -92,9 +92,9 @@ export function ServiceDetails({ nav, service }: { nav: OwnerNav; service: Servi
               {line.text}
             </div>
           ))}
-          <button type="button" className={`${s.btn} ${s.btnTall} ${s.btnPrimary} ${s.btnFull}`} onClick={() => nav.book(service.id)}>
+          <button type="button" className={`${s.btn} ${s.btnTall} ${s.btnPrimary} ${s.btnFull}`} disabled={!isEnabled} onClick={() => nav.book(service.id)}>
             <Icon name="btn-calendar" size={18} />
-            Book Service
+            {isEnabled ? 'Book Service' : 'Currently unavailable'}
           </button>
           <button type="button" className={`${s.btn} ${s.btnMid} ${s.btnSecondary} ${s.btnFull}`} onClick={nav.messages}>
             <Icon name="chat-sm" size={18} />

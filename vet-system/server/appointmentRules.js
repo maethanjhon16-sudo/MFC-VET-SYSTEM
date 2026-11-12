@@ -56,3 +56,30 @@ export function isWithinDoctorAvailability(value, durationMinutes, availability)
     && startMinute >= startHour * 60 + startMinutes
     && startMinute + durationMinutes <= endHour * 60 + endMinutes;
 }
+
+export function availableAppointmentTimes(date, durationMinutes, doctors, appointments, preferredDoctorId = null, now = Date.now()) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isInteger(durationMinutes) || durationMinutes < 1) return [];
+
+  const times = [];
+  for (let minutes = 0; minutes + durationMinutes <= 24 * 60; minutes += 30) {
+    const time = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    const scheduledAt = new Date(`${date}T${time}:00+08:00`);
+    const timestamp = scheduledAt.getTime();
+    const isoTimestamp = scheduledAt.toISOString();
+    if (!isValidAppointmentTime(isoTimestamp, durationMinutes, now)) continue;
+
+    const hasAvailableDoctor = doctors.some((doctor) => {
+      if (preferredDoctorId && doctor.id !== preferredDoctorId) return false;
+      if (!isWithinDoctorAvailability(isoTimestamp, durationMinutes, doctor)) return false;
+      return !appointments.some((appointment) => {
+        if (appointment.doctor_id !== doctor.id) return false;
+        const appointmentStart = new Date(appointment.scheduled_at).getTime();
+        const appointmentEnd = appointmentStart + appointment.duration_minutes * 60_000;
+        return appointmentStart < timestamp + durationMinutes * 60_000 && appointmentEnd > timestamp;
+      });
+    });
+
+    if (hasAvailableDoctor) times.push(time);
+  }
+  return times;
+}
