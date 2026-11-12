@@ -26,23 +26,16 @@ export function isValidAppointmentTime(value, durationMinutes, now = Date.now())
 
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Manila',
-    weekday: 'short',
-    hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
   }).formatToParts(date);
   const values = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
-  const hour = Number(values.hour);
   const minute = Number(values.minute);
-  const start = hour * 60 + minute;
-  return values.weekday !== 'Sun'
-    && minute % 30 === 0
-    && start >= 8 * 60
-    && start + durationMinutes <= 18 * 60;
+  return minute % 30 === 0;
 }
 
 export function isWithinDoctorAvailability(value, durationMinutes, availability) {
-  if (!availability) return true;
+  if (!availability) return false;
   if (typeof value !== 'string' || !Number.isInteger(durationMinutes) || durationMinutes < 1) return false;
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return false;

@@ -789,7 +789,7 @@ export function DoctorWorkspacePages({
           <div className={styles.weekdays}>{WEEKDAYS.map((day, index) => { const weekday = String(WEEKDAY_NUMBERS[index]); const isAvailable = state.activeDays[weekday] ?? false; return <label className={styles.weekday} key={day}><span>{day}</span><input type="checkbox" checked={isAvailable} onChange={() => dispatch({ type: 'TOGGLE_DAY', day: weekday })} /><small>{isAvailable ? 'Available' : 'Unavailable'}</small></label>; })}</div>
           <button type="button" className={styles.primaryButton} disabled={state.saving} onClick={() => void saveAvailability()}>{state.saving ? 'Saving…' : 'Save availability'}</button>
         </article>
-        <p className={styles.muted}>Saved hours are stored per doctor. Appointment booking continues to enforce the clinic’s configured opening hours.</p>
+        <p className={styles.muted}>Owners see these saved hours when choosing a veterinarian. Their booking times refresh automatically about every 30 seconds.</p>
       </>}
 
       {view === 'settings' && <article className={styles.settingsCard}>

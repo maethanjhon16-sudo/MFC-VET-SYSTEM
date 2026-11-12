@@ -40,11 +40,28 @@ function serviceMinutes(service: Service): number {
   return durations[service.id] ?? 30;
 }
 
-function availableTimes(date: string, duration: number): string[] {
-  const day = new Date(`${date}T12:00:00+08:00`).getUTCDay();
-  if (day === 0) return [];
+function availableTimes(
+  date: string,
+  duration: number,
+  doctors: BookingDoctor[],
+  selectedDoctorId: string,
+): string[] {
+  const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+  const relevantDoctors = selectedDoctorId
+    ? doctors.filter((doctor) => doctor.id === selectedDoctorId)
+    : doctors;
+  const schedules = relevantDoctors
+    .map((doctor) => doctor.availability.find((item) => item.weekday === day))
+    .filter((schedule) => schedule?.isAvailable);
   const times: string[] = [];
-  for (let minutes = 8 * 60; minutes + duration <= 18 * 60; minutes += 30) {
+  for (let minutes = 0; minutes + duration <= 24 * 60; minutes += 30) {
+    const fitsSchedule = schedules.some((schedule) => {
+      if (!schedule) return false;
+      const start = Number(schedule.startsAt.slice(0, 2)) * 60 + Number(schedule.startsAt.slice(3, 5));
+      const end = Number(schedule.endsAt.slice(0, 2)) * 60 + Number(schedule.endsAt.slice(3, 5));
+      return minutes >= start && minutes + duration <= end;
+    });
+    if (!fitsSchedule) continue;
     const time = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
     if (new Date(`${date}T${time}:00+08:00`).getTime() > Date.now()) times.push(time);
   }
@@ -96,7 +113,7 @@ function bookingReducer(state: BookingState, action: BookingAction): BookingStat
     case 'SET_FIELD':
       return { ...state, [action.field]: action.value, error: null };
     case 'DOCTORS_LOADED':
-      return { ...state, doctors: action.doctors, loadingDoctors: false };
+      return { ...state, doctors: action.doctors, loadingDoctors: false, error: null };
     case 'DOCTORS_FAILED':
       return { ...state, loadingDoctors: false, error: action.message };
     case 'PETS_LOADED':
@@ -143,7 +160,12 @@ export function AppointmentBooking({
     submitting: false,
     error: null,
   });
-  const slots = availableTimes(state.date, serviceMinutes(getService(state.serviceId)));
+  const slots = availableTimes(
+    state.date,
+    serviceMinutes(getService(state.serviceId)),
+    state.doctors,
+    state.doctorId,
+  );
 
   const loadDoctors = useCallback(async () => {
     try {
@@ -167,6 +189,20 @@ export function AppointmentBooking({
     void loadDoctors();
     void loadPets();
   }, [loadDoctors, loadPets]);
+
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) void loadDoctors();
+    };
+    const timer = window.setInterval(refreshIfVisible, 30_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
+  }, [loadDoctors]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -299,7 +335,12 @@ export function AppointmentBooking({
                   value={state.date}
                   onChange={(event) => {
                     const date = event.target.value;
-                    const nextSlots = availableTimes(date, serviceMinutes(selectedService));
+                    const nextSlots = availableTimes(
+                      date,
+                      serviceMinutes(selectedService),
+                      state.doctors,
+                      state.doctorId,
+                    );
                     dispatch({ type: 'SET_FIELD', field: 'date', value: date });
                     if (!nextSlots.includes(state.time) && nextSlots[0]) {
                       dispatch({ type: 'SET_FIELD', field: 'time', value: nextSlots[0] });
@@ -316,7 +357,7 @@ export function AppointmentBooking({
                   onChange={(event) => dispatch({ type: 'SET_FIELD', field: 'time', value: event.target.value })}
                   disabled={slots.length === 0}
                 >
-                  {slots.length === 0 && <option value="">No available times</option>}
+                  {slots.length === 0 && <option value="">No available times for this date</option>}
                   {slots.map((time) => (
                     <option key={time} value={time}>
                       {new Date(`2000-01-01T${time}:00+08:00`).toLocaleTimeString('en-PH', {
@@ -327,6 +368,9 @@ export function AppointmentBooking({
                     </option>
                   ))}
                 </select>
+                {slots.length === 0 && (
+                  <small>No veterinarian is scheduled for this date and service duration. Refreshing schedules automatically.</small>
+                )}
               </label>
             </div>
             <label className={styles.field}>
@@ -422,6 +466,17 @@ export function OwnerAppointments({ onBook, onCancel }: { onBook: () => void; on
 
   useEffect(() => {
     void load();
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) void load();
+    };
+    const timer = window.setInterval(refreshIfVisible, 30_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
   }, [load]);
 
   const cancel = async (id: string) => {
