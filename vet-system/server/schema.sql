@@ -158,6 +158,21 @@ CREATE TABLE IF NOT EXISTS inventory_stock (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+INSERT INTO inventory_stock (product_id, quantity) VALUES
+  ('dog-food', 16),
+  ('cat-kibble', 14),
+  ('wet-food', 18),
+  ('multivitamin', 14),
+  ('omega', 12),
+  ('joint-care', 10),
+  ('shampoo', 14),
+  ('slicker', 10),
+  ('ear-cleaner', 12),
+  ('harness', 8),
+  ('collar', 12),
+  ('dental-toy', 16)
+ON CONFLICT (product_id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS doctor_availability (
   doctor_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   weekday smallint NOT NULL CHECK (weekday BETWEEN 0 AND 6),
