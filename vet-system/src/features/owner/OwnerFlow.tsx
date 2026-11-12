@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { OwnerShell } from '../../components/owner/OwnerShell';
-import { getOwnerInventory, getOwnerServices } from '../auth/api';
+import { getOwnerInventory, getOwnerNotificationCount, getOwnerServices } from '../auth/api';
 import { getProduct, getService, PRODUCTS, SERVICES } from './data';
 import { cartCount, createInitialState, ownerReducer } from './ownerReducer';
 import { ComingSoon } from './screens/ComingSoon';
@@ -82,6 +82,8 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
   const [stockLevels, setStockLevels] = useState<Record<string, number>>({});
   const [inventoryReady, setInventoryReady] = useState(false);
   const [inventoryError, setInventoryError] = useState<string | null>(null);
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
 
   const nav = useMemo<OwnerNav>(
     () => ({
@@ -166,6 +168,39 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
       if (loading) return;
       loading = true;
       try {
+        const { unreadCount } = await getOwnerNotificationCount();
+        if (active) {
+          setNotificationCount(unreadCount);
+          setNotificationError(null);
+        }
+      } catch (error) {
+        if (active) setNotificationError(error instanceof Error ? error.message : 'Could not refresh notification count.');
+      } finally {
+        loading = false;
+      }
+    };
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) void refresh();
+    };
+    void refresh();
+    const timer = window.setInterval(refreshIfVisible, 15_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let loading = false;
+    const refresh = async () => {
+      if (loading) return;
+      loading = true;
+      try {
         const { inventory } = await getOwnerInventory();
         if (active) {
           setStockLevels(Object.fromEntries(inventory.map((item) => [item.productId, item.quantity])));
@@ -215,6 +250,7 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
       nav={nav}
       ownerName={ownerName}
       cartCount={cartCount(state.cart)}
+      notificationCount={notificationCount}
       query={state.screen === 'owner-shop' ? state.shopQuery : ''}
       onSearch={(query) => dispatch({ type: 'GO_SHOP', query })}
       onSignOut={onSignOut}
@@ -222,6 +258,7 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
       {cartStorageError && <p className={s.pageError} role="alert">Your cart could not be saved on this device. {cartStorageError}</p>}
       {serviceSettingsError && <p className={s.pageError} role="alert">Could not refresh service availability. Booking requests are still checked by the clinic. {serviceSettingsError}</p>}
       {inventoryError && <p className={s.pageError} role="alert">Could not refresh product stock. {inventoryError}</p>}
+      {notificationError && <p className={s.pageError} role="alert">Could not refresh notifications. {notificationError}</p>}
       {state.screen === 'owner-home' && <OwnerHome nav={nav} ownerName={ownerName} enabledServiceIds={enabledServiceIds} stockLevels={stockLevels} />}
       {state.screen === 'owner-services' && (
         <OwnerServices nav={nav} chip={state.servicesChip} enabledServiceIds={enabledServiceIds} onChip={(chip) => dispatch({ type: 'SET_SERVICES_CHIP', chip })} />

@@ -1,129 +1,305 @@
-import { useCallback, useEffect, useReducer } from 'react';
-import { approveDoctorApplication, getDoctorApplications, type DoctorApplication } from '../auth/api';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Icon } from '../../components/ui/Icon';
+import {
+  approveDoctorApplication,
+  getAdminActivity,
+  getDoctorApplications,
+  getStaffAppointments,
+  getStaffDoctors,
+  markAdminActivityItemRead,
+  markAdminActivityRead,
+  type ActivityNotification,
+  type DoctorApplication,
+} from '../auth/api';
 import { StaffAppointmentQueue } from '../appointments/StaffAppointmentQueue';
 import styles from './AdminFlow.module.css';
 
-interface AdminState {
-  applications: DoctorApplication[];
-  loading: boolean;
-  approvingId: string | null;
-  error: string | null;
-  message: string | null;
+type AdminView = 'overview' | 'appointments' | 'doctors' | 'activity';
+
+const NAV_ITEMS: { id: AdminView; label: string; icon: 'nav-home' | 'nav-calendar' | 'quick-file' | 'bell' }[] = [
+  { id: 'overview', label: 'Overview', icon: 'nav-home' },
+  { id: 'appointments', label: 'Appointments', icon: 'nav-calendar' },
+  { id: 'doctors', label: 'Doctor approvals', icon: 'quick-file' },
+  { id: 'activity', label: 'Activity & notifications', icon: 'bell' },
+];
+
+function initials(name: string): string {
+  return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0] ?? '').join('').toUpperCase();
 }
 
-type AdminAction =
-  | { type: 'LOADED'; applications: DoctorApplication[] }
-  | { type: 'LOAD_FAILED'; message: string }
-  | { type: 'APPROVING'; id: string }
-  | { type: 'APPROVED'; id: string }
-  | { type: 'APPROVAL_FAILED'; message: string }
-  | { type: 'DISMISS_MESSAGE' };
-
-function adminReducer(state: AdminState, action: AdminAction): AdminState {
-  switch (action.type) {
-    case 'LOADED':
-      return { ...state, applications: action.applications, loading: false, error: null };
-    case 'LOAD_FAILED':
-      return { ...state, loading: false, error: action.message };
-    case 'APPROVING':
-      return { ...state, approvingId: action.id, error: null, message: null };
-    case 'APPROVED':
-      return {
-        ...state,
-        applications: state.applications.filter((application) => application.id !== action.id),
-        approvingId: null,
-        message: 'Doctor account approved. They can now sign in.',
-      };
-    case 'APPROVAL_FAILED':
-      return { ...state, approvingId: null, error: action.message };
-    case 'DISMISS_MESSAGE':
-      return { ...state, message: null };
-    default:
-      return state;
-  }
-}
-
-interface AdminFlowProps {
-  adminName: string;
-  onSignOut: () => void;
-}
-
-export function AdminFlow({ adminName, onSignOut }: AdminFlowProps) {
-  const [state, dispatch] = useReducer(adminReducer, {
-    applications: [],
-    loading: true,
-    approvingId: null,
-    error: null,
-    message: null,
+function formatWhen(value: string): string {
+  return new Date(value).toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
+    dateStyle: 'medium',
+    timeStyle: 'short',
   });
+}
 
-  const loadApplications = useCallback(async () => {
+function eventIcon(eventType: string): 'quick-calendar' | 'quick-chat' | 'quick-file' | 'btn-bag' {
+  if (eventType.includes('appointment') || eventType === 'revisit_suggested') return 'quick-calendar';
+  if (eventType === 'care_team_message') return 'quick-chat';
+  if (eventType === 'order_placed' || eventType === 'order_updated') return 'btn-bag';
+  return 'quick-file';
+}
+
+export function AdminFlow({ adminName, onSignOut }: { adminName: string; onSignOut: () => void }) {
+  const [view, setView] = useState<AdminView>('overview');
+  const [applications, setApplications] = useState<DoctorApplication[]>([]);
+  const [events, setEvents] = useState<ActivityNotification[]>([]);
+  const [pendingAppointments, setPendingAppointments] = useState(0);
+  const [activeDoctors, setActiveDoctors] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingRead, setSavingRead] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
     try {
-      const { applications } = await getDoctorApplications();
-      dispatch({ type: 'LOADED', applications });
-    } catch (error) {
-      dispatch({
-        type: 'LOAD_FAILED',
-        message: error instanceof Error ? error.message : 'Could not load doctor applications.',
-      });
+      const [applicationResult, activity, appointments, doctors] = await Promise.all([
+        getDoctorApplications(),
+        getAdminActivity(),
+        getStaffAppointments(),
+        getStaffDoctors(),
+      ]);
+      setApplications(applicationResult.applications);
+      setEvents(activity.events);
+      setUnreadCount(activity.unreadCount);
+      setPendingAppointments(appointments.appointments.length);
+      setActiveDoctors(doctors.doctors.length);
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Could not refresh the admin workspace.');
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadApplications();
-  }, [loadApplications]);
+    void refresh();
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) void refresh();
+    };
+    const timer = window.setInterval(refreshIfVisible, 20_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
+  }, [refresh]);
 
   const approve = async (id: string) => {
-    dispatch({ type: 'APPROVING', id });
+    setSavingId(id);
+    setError(null);
+    setMessage(null);
     try {
       await approveDoctorApplication(id);
-      dispatch({ type: 'APPROVED', id });
-    } catch (error) {
-      dispatch({
-        type: 'APPROVAL_FAILED',
-        message: error instanceof Error ? error.message : 'Could not approve this doctor.',
-      });
+      setApplications((current) => current.filter((application) => application.id !== id));
+      setMessage('Doctor account approved. They can now sign in.');
+      await refresh();
+    } catch (approveError) {
+      setError(approveError instanceof Error ? approveError.message : 'Could not approve this doctor.');
+    } finally {
+      setSavingId(null);
     }
   };
+
+  const markRead = async (event: ActivityNotification) => {
+    if (event.readAt) return;
+    setSavingRead(true);
+    try {
+      await markAdminActivityItemRead(event.id);
+      setEvents((current) => current.map((item) =>
+        item.id === event.id ? { ...item, readAt: new Date().toISOString() } : item,
+      ));
+      setUnreadCount((current) => Math.max(0, current - 1));
+    } catch (readError) {
+      setError(readError instanceof Error ? readError.message : 'Could not mark this activity as read.');
+    } finally {
+      setSavingRead(false);
+    }
+  };
+
+  const markAllRead = async () => {
+    setSavingRead(true);
+    setError(null);
+    try {
+      await markAdminActivityRead();
+      const readAt = new Date().toISOString();
+      setEvents((current) => current.map((event) => event.readAt ? event : { ...event, readAt }));
+      setUnreadCount(0);
+    } catch (readError) {
+      setError(readError instanceof Error ? readError.message : 'Could not mark activity as read.');
+    } finally {
+      setSavingRead(false);
+    }
+  };
+
+  const unreadEvents = useMemo(() => events.filter((event) => !event.readAt), [events]);
+  const recentEvents = events.slice(0, 5);
+  const title = NAV_ITEMS.find((item) => item.id === view)?.label ?? 'Overview';
 
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <div className={styles.brand}><span>✚</span><b>MFC PET LIFE</b><small>ADMINISTRATION</small></div>
-        <div className={styles.headerRight}><span>{adminName}</span><button type="button" onClick={onSignOut}>Sign out</button></div>
-      </header>
-      <main className={styles.content}>
-        <div className={styles.heading}>
-          <div><p>CLINIC WORKSPACE</p><h1>Administrator dashboard</h1><span>Review doctor account requests and manage clinic access.</span></div>
-          <button type="button" onClick={() => void loadApplications()}>↻&nbsp; Refresh</button>
+        <button type="button" className={styles.brand} onClick={() => setView('overview')} aria-label="MFC PET LIFE admin home">
+          <span className={styles.brandMark}><Icon name="mfc-logo" size={25} width={30} /></span>
+          <span><b>MFC PET LIFE</b><small>CLINIC ADMINISTRATION</small></span>
+        </button>
+        <div className={styles.headerRight}>
+          <button type="button" className={styles.notificationButton} aria-label={`${unreadCount} unread admin notifications`} onClick={() => setView('activity')}>
+            <Icon name="bell" size={19} />
+            {unreadCount > 0 && <span>{unreadCount > 99 ? '99+' : unreadCount}</span>}
+          </button>
+          <span className={styles.adminIdentity}><i>{initials(adminName)}</i>{adminName}</span>
+          <button type="button" className={styles.signOut} onClick={onSignOut}>Sign out</button>
         </div>
-        {state.error && <div className={styles.error} role="alert">{state.error}</div>}
-        {state.message && <div className={styles.success} role="status">{state.message}<button type="button" onClick={() => dispatch({ type: 'DISMISS_MESSAGE' })}>×</button></div>}
-        <StaffAppointmentQueue role="admin" />
-        <section className={styles.panel}>
-          <div className={styles.panelHeading}><div><h2>Doctor applications</h2><p>Approve a doctor before they can access the clinical workspace.</p></div><b>{state.applications.length} pending</b></div>
-          {state.loading ? <p className={styles.empty}>Loading applications…</p>
-            : state.applications.length === 0 && !state.error
+      </header>
+
+      <div className={styles.layout}>
+        <aside className={styles.sidebar}>
+          <p className={styles.sideLabel}>WORKSPACE</p>
+          <nav aria-label="Admin workspace">
+            {NAV_ITEMS.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={`${styles.navItem} ${view === item.id ? styles.navActive : ''}`}
+                aria-current={view === item.id ? 'page' : undefined}
+                onClick={() => setView(item.id)}
+              >
+                <Icon name={item.icon} size={19} />
+                <span>{item.label}</span>
+                {item.id === 'doctors' && applications.length > 0 && <i>{applications.length}</i>}
+                {item.id === 'activity' && unreadCount > 0 && <i>{unreadCount > 99 ? '99+' : unreadCount}</i>}
+              </button>
+            ))}
+          </nav>
+          <div className={styles.sideNote}>
+            <Icon name="info-pin" size={18} />
+            <p>Verify professional credentials before approving new veterinarian accounts.</p>
+          </div>
+        </aside>
+
+        <main className={styles.content}>
+          <div className={styles.heading}>
+            <div>
+              <p className={styles.eyebrow}>CLINIC WORKSPACE</p>
+              <h1>{view === 'overview' ? `Good day, ${adminName}` : title}</h1>
+              <span>{view === 'overview'
+                ? 'A live overview of clinic activity, appointments, and care-team updates.'
+                : view === 'activity'
+                  ? 'Updates from pet owners and veterinarians across the clinic.'
+                  : view === 'doctors'
+                    ? 'Review and verify veterinarian account requests.'
+                    : 'Review pending appointment requests and clinic scheduling.'}</span>
+            </div>
+            <button type="button" className={styles.refreshButton} onClick={() => void refresh()}>↻ <span>Refresh</span></button>
+          </div>
+
+          {error && <div className={styles.error} role="alert">{error}</div>}
+          {message && <div className={styles.success} role="status">{message}<button type="button" onClick={() => setMessage(null)} aria-label="Dismiss message">×</button></div>}
+          {loading && <p className={styles.empty} role="status">Loading the clinic workspace…</p>}
+
+          {view === 'overview' && <>
+            <section className={styles.metrics} aria-label="Clinic overview">
+              <article><span>Pending appointments</span><b>{pendingAppointments}</b><small>Waiting for clinic review</small></article>
+              <article><span>Doctor applications</span><b>{applications.length}</b><small>Credentials to verify</small></article>
+              <article><span>Active veterinarians</span><b>{activeDoctors}</b><small>Approved clinic accounts</small></article>
+              <article><span>Unread updates</span><b>{unreadCount}</b><small>Pet owner and doctor activity</small></article>
+            </section>
+            <section className={styles.dashboardGrid}>
+              <article className={styles.panel}>
+                <div className={styles.panelHeading}><div><h2>Recent clinic activity</h2><p>Updates refresh automatically while this workspace is open.</p></div><button type="button" onClick={() => setView('activity')}>View all</button></div>
+                <ActivityList events={recentEvents} onRead={(event) => void markRead(event)} saving={savingRead} emptyText="No activity recorded yet." />
+              </article>
+              <article className={styles.panel}>
+                <div className={styles.panelHeading}><div><h2>Needs attention</h2><p>Items requiring an administrator response.</p></div></div>
+                <button type="button" className={styles.attentionRow} onClick={() => setView('appointments')}>
+                  <span className={styles.attentionIcon}><Icon name="quick-calendar" size={20} /></span>
+                  <span><b>Appointment requests</b><small>{pendingAppointments} pending clinic response</small></span>
+                  <Icon name="chev-row" size={17} />
+                </button>
+                <button type="button" className={styles.attentionRow} onClick={() => setView('doctors')}>
+                  <span className={styles.attentionIcon}><Icon name="quick-file" size={20} /></span>
+                  <span><b>Doctor applications</b><small>{applications.length} waiting for verification</small></span>
+                  <Icon name="chev-row" size={17} />
+                </button>
+                {unreadCount > 0 && <button type="button" className={styles.attentionRow} onClick={() => setView('activity')}>
+                  <span className={styles.attentionIcon}><Icon name="bell" size={20} /></span>
+                  <span><b>Unread activity</b><small>{unreadCount} new clinic updates</small></span>
+                  <Icon name="chev-row" size={17} />
+                </button>}
+              </article>
+            </section>
+          </>}
+
+          {view === 'appointments' && <section className={styles.panel}><div className={styles.panelHeading}><div><h2>Appointment requests</h2><p>Confirm or decline requests after reviewing the schedule.</p></div><b className={styles.pill}>{pendingAppointments} pending</b></div><StaffAppointmentQueue role="admin" onChanged={() => void refresh()} /></section>}
+
+          {view === 'doctors' && <section className={styles.panel}>
+            <div className={styles.panelHeading}><div><h2>Doctor applications</h2><p>Approve a doctor only after independently checking their identity and PRC license.</p></div><b className={styles.pill}>{applications.length} pending</b></div>
+            {applications.length === 0 && !loading
               ? <p className={styles.empty}>No pending applications right now.</p>
-              : <div className={styles.list}>
-                {state.applications.map((application) => (
-                  <article className={styles.card} key={application.id}>
-                    <div className={styles.doctorMark}>{application.fullName.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')}</div>
-                    <div className={styles.details}>
-                      <h3>{application.fullName}</h3>
-                      <p>{application.specialization}</p>
-                      <div><span>{application.email}</span><span>{application.phone}</span><span>PRC {application.prcLicense}</span></div>
-                      <small>Submitted {new Date(application.submittedAt).toLocaleDateString()}</small>
-                    </div>
-                    <button type="button" disabled={state.approvingId !== null} onClick={() => void approve(application.id)}>
-                      {state.approvingId === application.id ? 'Approving…' : 'Approve doctor'}
-                    </button>
-                  </article>
-                ))}
-              </div>}
-        </section>
-        <p className={styles.securityNote}>Only approve accounts after independently verifying the doctor’s identity and PRC license.</p>
-      </main>
+              : <div className={styles.applicationList}>{applications.map((application) => (
+                <article className={styles.application} key={application.id}>
+                  <div className={styles.doctorMark}>{initials(application.fullName)}</div>
+                  <div className={styles.details}>
+                    <h3>{application.fullName}</h3>
+                    <p>{application.specialization || 'Veterinarian'}</p>
+                    <div><span>{application.email}</span><span>{application.phone || 'No phone on file'}</span><span>PRC {application.prcLicense}</span></div>
+                    <small>Submitted {formatWhen(application.submittedAt)}</small>
+                  </div>
+                  <button type="button" className={styles.approveButton} disabled={savingId !== null} onClick={() => void approve(application.id)}>
+                    {savingId === application.id ? 'Approving…' : 'Approve doctor'}
+                  </button>
+                </article>
+              ))}</div>}
+          </section>}
+
+          {view === 'activity' && <section className={styles.panel}>
+            <div className={styles.panelHeading}>
+              <div><h2>Clinic activity</h2><p>Purchases, profile changes, appointments, medical updates, inventory, and more.</p></div>
+              <button type="button" className={styles.markReadButton} disabled={savingRead || unreadCount === 0} onClick={() => void markAllRead()}>{savingRead ? 'Saving…' : 'Mark all read'}</button>
+            </div>
+            <ActivityList events={events} onRead={(event) => void markRead(event)} saving={savingRead} emptyText="New clinic activity will appear here." />
+            {unreadEvents.length > 0 && <p className={styles.feedFooter}>{unreadEvents.length} unread update{unreadEvents.length === 1 ? '' : 's'} · refreshes every 20 seconds</p>}
+          </section>}
+
+          <p className={styles.securityNote}>Admin activity is private to authorized clinic administrators. Use patient details only for clinic operations.</p>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function ActivityList({
+  events,
+  onRead,
+  saving,
+  emptyText,
+}: {
+  events: ActivityNotification[];
+  onRead: (event: ActivityNotification) => void;
+  saving: boolean;
+  emptyText: string;
+}) {
+  if (!events.length) return <p className={styles.empty}>{emptyText}</p>;
+  return (
+    <div className={styles.activityList}>
+      {events.map((event) => (
+        <article className={`${styles.activityItem} ${event.readAt ? '' : styles.activityUnread}`} key={event.id}>
+          <span className={styles.activityIcon}><Icon name={eventIcon(event.eventType)} size={18} /></span>
+          <div className={styles.activityCopy}>
+            <b>{event.title}</b>
+            <p>{event.detail}</p>
+            <small>{event.actorName} · {event.actorRole} · {formatWhen(event.createdAt)}</small>
+          </div>
+          {!event.readAt && <button type="button" className={styles.markReadButton} disabled={saving} onClick={() => onRead(event)}>Mark read</button>}
+        </article>
+      ))}
     </div>
   );
 }

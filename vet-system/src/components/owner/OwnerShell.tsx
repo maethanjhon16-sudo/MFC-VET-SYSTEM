@@ -9,6 +9,7 @@ interface OwnerShellProps {
   nav: OwnerNav;
   ownerName: string;
   cartCount: number;
+  notificationCount: number;
   onSearch: (query: string) => void;
   /** Search box text, so the header stays in sync with the shop search. */
   query?: string;
@@ -31,7 +32,7 @@ const ITEMS: NavItem[] = [
   { key: 'menu', label: 'Menu', icon: 'nav-menu' },
 ];
 
-export function OwnerShell({ active, nav, ownerName, cartCount, onSearch, query = '', onSignOut, children }: OwnerShellProps) {
+export function OwnerShell({ active, nav, ownerName, cartCount, notificationCount, onSearch, query = '', onSignOut, children }: OwnerShellProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const go = (key: NavKey) => {
     if (key === 'menu') {
@@ -106,8 +107,9 @@ export function OwnerShell({ active, nav, ownerName, cartCount, onSearch, query 
           <button type="button" className={styles.iconBtn} aria-label="Messages" onClick={nav.messages}>
             <Icon name="chat" size={20} />
           </button>
-          <button type="button" className={styles.iconBtn} aria-label="Notifications" onClick={nav.notifications}>
+          <button type="button" className={styles.iconBtn} aria-label={`Notifications${notificationCount > 0 ? `, ${notificationCount} unread` : ''}`} onClick={nav.notifications}>
             <Icon name="bell" size={20} />
+            {notificationCount > 0 && <span className={styles.count}>{notificationCount > 99 ? '99+' : notificationCount}</span>}
           </button>
           <button type="button" className={styles.profile} onClick={() => { setMenuOpen(false); nav.profile(); }}>
             <span className={styles.avatar} aria-hidden="true">{initials}</span>
