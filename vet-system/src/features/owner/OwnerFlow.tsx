@@ -8,6 +8,7 @@ import { OwnerServices } from './screens/OwnerServices';
 import { OwnerShop } from './screens/OwnerShop';
 import { ProductDetails } from './screens/ProductDetails';
 import { ServiceDetails } from './screens/ServiceDetails';
+import { AppointmentBooking, OwnerAppointments } from './screens/AppointmentScreens';
 import type { NavKey, OwnerNav, OwnerScreen } from './types';
 import s from './screens/Screens.module.css';
 
@@ -21,6 +22,8 @@ const ACTIVE_NAV: Record<OwnerScreen, NavKey | null> = {
   'owner-home': 'home',
   'owner-services': 'actions',
   'service-details': 'actions',
+  'appointment-booking': 'actions',
+  'owner-appointments': 'schedule',
   'owner-shop': 'shop',
   'product-details': 'shop',
   'coming-soon': null,
@@ -36,6 +39,8 @@ export function OwnerFlow({ initialScreen = 'owner-home', onSignOut }: OwnerFlow
       service: (id) => dispatch({ type: 'OPEN_SERVICE', id }),
       shop: (chip) => dispatch({ type: 'GO_SHOP', chip }),
       product: (id) => dispatch({ type: 'OPEN_PRODUCT', id }),
+      book: (serviceId) => dispatch({ type: 'GO_BOOKING', serviceId }),
+      appointments: () => dispatch({ type: 'GO_APPOINTMENTS' }),
       soon: (label) => dispatch({ type: 'GO_SOON', label }),
     }),
     [],
@@ -68,6 +73,12 @@ export function OwnerFlow({ initialScreen = 'owner-home', onSignOut }: OwnerFlow
         <OwnerServices nav={nav} chip={state.servicesChip} onChip={(chip) => dispatch({ type: 'SET_SERVICES_CHIP', chip })} />
       )}
       {state.screen === 'service-details' && <ServiceDetails nav={nav} service={getService(state.serviceId)} />}
+      {state.screen === 'appointment-booking' && (
+        <AppointmentBooking serviceId={state.serviceId} onCancel={nav.appointments} onBooked={nav.appointments} />
+      )}
+      {state.screen === 'owner-appointments' && (
+        <OwnerAppointments onBook={() => nav.book()} onCancel={() => nav.home()} />
+      )}
       {state.screen === 'owner-shop' && (
         <OwnerShop
           nav={nav}

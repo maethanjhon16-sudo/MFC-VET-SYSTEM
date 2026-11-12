@@ -1,0 +1,32 @@
+.panel { overflow: hidden; border: 1px solid #e5ebe4; border-radius: 14px; background: #fff; box-shadow: 0 4px 15px rgba(28,55,38,.04); }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 21px 24px; border-bottom: 1px solid #edf0ec; }
+.eyebrow { color: #806bb1; font-size: 9px; font-weight: 800; letter-spacing: .14em; }
+.header h2 { margin: 4px 0; color: #2d3e33; font-size: 16px; }
+.header p { margin: 0; color: #839087; font-size: 11px; }
+.refresh { padding: 9px 13px; border: 1px solid #e0e7e0; border-radius: 8px; color: #435b49; background: #fff; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.list { display: grid; }
+.request { display: flex; align-items: flex-start; gap: 15px; padding: 19px 24px; border-bottom: 1px solid #eef1ed; }
+.request:last-child { border-bottom: 0; }
+.petIcon { display: grid; flex: 0 0 auto; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #e7f0e5; font-size: 20px; }
+.details { flex: 1; min-width: 0; }
+.details h3 { margin: 0; color: #2d3e33; font-size: 13px; }
+.details p { margin: 5px 0; color: #315a3f; font-size: 11px; font-weight: 700; }
+.details > span, .details > small { display: block; margin-top: 4px; color: #78867d; font-size: 10px; line-height: 1.5; }
+.assign { display: flex; flex-direction: column; gap: 5px; max-width: 380px; margin-top: 10px; color: #54675a; font-size: 10px; font-weight: 700; }
+.assign select { width: 100%; min-height: 36px; padding: 0 10px; border: 1px solid #e0e7e0; border-radius: 8px; color: #354a3c; background: #fbfcfa; font: inherit; }
+.actions { display: flex; flex: 0 0 auto; gap: 8px; align-self: center; }
+.actions button { min-width: 78px; padding: 9px 11px; border: 1px solid #e0e7e0; border-radius: 8px; background: #fff; font-size: 10px; font-weight: 800; }
+.actions button:disabled { cursor: wait; opacity: .6; }
+.decline { color: #845548; }
+.confirm { color: #fff; background: #1f593c !important; border-color: #1f593c !important; }
+.empty { margin: 0; padding: 32px 20px; color: #859188; font-size: 12px; text-align: center; }
+.error, .success { margin: 14px 18px 0; padding: 11px 13px; border-radius: 8px; font-size: 11px; }
+.error { border: 1px solid #e8c9c4; color: #8d4037; background: #fbefed; }
+.success { display: flex; justify-content: space-between; color: #2d6541; background: #eff8ef; }
+.success button { border: 0; color: inherit; background: transparent; font-size: 16px; }
+@media (max-width: 700px) {
+  .header, .request { padding: 16px; }
+  .request { flex-wrap: wrap; }
+  .details { flex-basis: calc(100% - 60px); }
+  .actions { margin-left: 57px; }
+}

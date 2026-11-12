@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { databaseTargetFingerprint, ensureSchema, pool } from './database.js';
 import { hashPassword, verifyPassword } from './passwords.js';
+import { appointmentServices, isValidAppointmentTime } from './appointmentRules.js';
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -50,7 +51,13 @@ const registrationLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many registration attempts. Please try again later.' },
 });
-
+const appointmentLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many appointment requests. Please try again later.' },
+});
 function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
@@ -150,15 +157,38 @@ function requireSameOrigin(req, res, next) {
   return next();
 }
 
-function requireAdministrator(req, res, next) {
-  asyncRoute(async (request, response) => {
+function requireRoles(...roles) {
+  return (req, res, next) => asyncRoute(async (request, response) => {
     await ensureSchema();
     const user = await findSessionUser(request);
     if (!user) return response.status(401).json({ error: 'Sign in to continue.' });
-    if (user.role !== 'admin') return response.status(403).json({ error: 'Administrator access is required.' });
+    if (!roles.includes(user.role)) return response.status(403).json({ error: 'You do not have access to this resource.' });
     request.user = user;
     return next();
   })(req, res, next);
+}
+
+const requireAdministrator = requireRoles('admin');
+const requireOwner = requireRoles('owner');
+const requireClinicalStaff = requireRoles('doctor', 'admin');
+
+function appointmentDto(row) {
+  const service = appointmentServices.get(row.service_id);
+  return {
+    id: row.id,
+    petName: row.pet_name,
+    serviceId: row.service_id,
+    serviceName: service?.name ?? row.service_id,
+    doctorId: row.doctor_id,
+    doctorName: row.doctor_name ?? null,
+    ownerName: row.owner_name ?? null,
+    ownerEmail: row.owner_email ?? null,
+    ownerPhone: row.owner_phone ?? null,
+    scheduledAt: row.scheduled_at,
+    notes: row.notes,
+    status: row.status,
+    createdAt: row.created_at,
+  };
 }
 
 async function createSession(client, userId, remember) {
@@ -317,6 +347,238 @@ app.post('/api/auth/logout', requireSameOrigin, asyncRoute(async (req, res) => {
 app.post('/api/auth/password-reset', requireSameOrigin, asyncRoute(async (_req, res) => {
   await ensureSchema();
   return res.status(501).json({ error: 'Password reset email is not configured yet. Contact the clinic administrator.' });
+}));
+
+app.get('/api/owner/doctors', requireOwner, asyncRoute(async (_req, res) => {
+  const result = await pool.query(
+    `SELECT id, full_name, specialization
+     FROM users
+     WHERE role = 'doctor' AND status = 'active'
+     ORDER BY full_name ASC`,
+  );
+  res.json({
+    doctors: result.rows.map((row) => ({
+      id: row.id,
+      fullName: row.full_name,
+      specialization: row.specialization,
+    })),
+  });
+}));
+
+app.get('/api/owner/appointments', requireOwner, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at,
+            a.notes, a.status, a.created_at, d.full_name AS doctor_name
+     FROM appointments a
+     LEFT JOIN users d ON d.id = a.doctor_id
+     WHERE a.owner_id = $1
+     ORDER BY a.scheduled_at DESC
+     LIMIT 100`,
+    [req.user.id],
+  );
+  res.json({ appointments: result.rows.map(appointmentDto) });
+}));
+
+app.post('/api/owner/appointments', requireSameOrigin, requireOwner, appointmentLimiter, asyncRoute(async (req, res) => {
+  const body = req.body ?? {};
+  const petName = typeof body.petName === 'string' ? body.petName.trim() : '';
+  const serviceId = body.serviceId;
+  const service = appointmentServices.get(serviceId);
+  const doctorId = body.doctorId === '' ? null : body.doctorId ?? null;
+  const notes = body.notes === undefined ? '' : body.notes;
+
+  if (!validText(petName, 80)) return res.status(400).json({ error: 'Enter your pet’s name (up to 80 characters).' });
+  if (!service) return res.status(400).json({ error: 'Choose a valid clinic service.' });
+  if (doctorId !== null && (typeof doctorId !== 'string' || !/^[0-9a-f-]{36}$/i.test(doctorId))) {
+    return res.status(400).json({ error: 'Choose a valid veterinarian or select any available veterinarian.' });
+  }
+  if (!isValidAppointmentTime(body.scheduledAt, service.durationMinutes)) {
+    return res.status(400).json({ error: 'Choose a future 30-minute slot during clinic hours (Monday–Saturday, 8:00 AM–6:00 PM) within the next 90 days.' });
+  }
+  if (typeof notes !== 'string' || notes.trim().length > 500) {
+    return res.status(400).json({ error: 'Visit notes must be 500 characters or fewer.' });
+  }
+
+  if (doctorId) {
+    const doctor = await pool.query(
+      `SELECT id FROM users
+       WHERE id = $1 AND role = 'doctor' AND status = 'active'`,
+      [doctorId],
+    );
+    if (!doctor.rowCount) return res.status(400).json({ error: 'That veterinarian is not available for booking.' });
+  }
+
+  const result = await pool.query(
+    `INSERT INTO appointments (
+       id, owner_id, pet_name, service_id, doctor_id, scheduled_at,
+       duration_minutes, notes, status
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+     RETURNING id, pet_name, service_id, doctor_id, scheduled_at, notes, status, created_at`,
+    [
+      randomUUID(), req.user.id, petName, serviceId, doctorId, body.scheduledAt,
+      service.durationMinutes, notes.trim(),
+    ],
+  );
+  return res.status(201).json({ appointment: appointmentDto(result.rows[0]) });
+}));
+
+app.post('/api/owner/appointments/:id/cancel', requireSameOrigin, requireOwner, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `UPDATE appointments
+     SET status = 'cancelled', updated_at = now()
+     WHERE id = $1 AND owner_id = $2 AND status = 'pending'
+     RETURNING id`,
+    [req.params.id, req.user.id],
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'Only your pending appointment requests can be cancelled.' });
+  return res.json({ cancelled: true });
+}));
+
+app.get('/api/staff/appointments', requireClinicalStaff, asyncRoute(async (req, res) => {
+  const result = req.user.role === 'doctor'
+    ? await pool.query(
+      `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at,
+              a.notes, a.status, a.created_at, o.full_name AS owner_name,
+              o.email AS owner_email, o.phone AS owner_phone, d.full_name AS doctor_name
+       FROM appointments a
+       JOIN users o ON o.id = a.owner_id
+       LEFT JOIN users d ON d.id = a.doctor_id
+       WHERE a.status = 'pending' AND (a.doctor_id = $1 OR a.doctor_id IS NULL)
+       ORDER BY a.scheduled_at ASC
+       LIMIT 100`,
+      [req.user.id],
+    )
+    : await pool.query(
+      `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at,
+              a.notes, a.status, a.created_at, o.full_name AS owner_name,
+              o.email AS owner_email, o.phone AS owner_phone, d.full_name AS doctor_name
+       FROM appointments a
+       JOIN users o ON o.id = a.owner_id
+       LEFT JOIN users d ON d.id = a.doctor_id
+       WHERE a.status = 'pending'
+       ORDER BY a.scheduled_at ASC
+       LIMIT 100`,
+    );
+  res.json({ appointments: result.rows.map(appointmentDto) });
+}));
+
+app.get('/api/staff/doctors', requireClinicalStaff, asyncRoute(async (_req, res) => {
+  const result = await pool.query(
+    `SELECT id, full_name, specialization
+     FROM users
+     WHERE role = 'doctor' AND status = 'active'
+     ORDER BY full_name ASC`,
+  );
+  res.json({
+    doctors: result.rows.map((row) => ({
+      id: row.id,
+      fullName: row.full_name,
+      specialization: row.specialization,
+    })),
+  });
+}));
+
+app.get('/api/staff/schedule', requireClinicalStaff, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `SELECT a.id, a.pet_name, a.service_id, a.doctor_id, a.scheduled_at,
+            a.notes, a.status, a.created_at, o.full_name AS owner_name,
+            o.email AS owner_email, o.phone AS owner_phone, d.full_name AS doctor_name
+     FROM appointments a
+     JOIN users o ON o.id = a.owner_id
+     LEFT JOIN users d ON d.id = a.doctor_id
+     WHERE a.status IN ('pending', 'confirmed')
+       AND ($1 = 'admin' OR a.doctor_id = $2)
+     ORDER BY a.scheduled_at ASC
+     LIMIT 500`,
+    [req.user.role, req.user.id],
+  );
+  res.json({ appointments: result.rows.map(appointmentDto) });
+}));
+
+app.post('/api/staff/appointments/:id/decision', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
+  const decision = req.body?.decision;
+  if (!['confirm', 'decline'].includes(decision)) {
+    return res.status(400).json({ error: 'Choose confirm or decline for this appointment request.' });
+  }
+  const status = decision === 'confirm' ? 'confirmed' : 'declined';
+  const doctorId = req.user.role === 'doctor' ? req.user.id : req.body?.doctorId ?? null;
+  if (status === 'confirmed' && !doctorId) {
+    return res.status(400).json({ error: 'Assign an active veterinarian before confirming this appointment.' });
+  }
+  if (status === 'confirmed') {
+    const doctor = await pool.query(
+      `SELECT id FROM users
+       WHERE id = $1 AND role = 'doctor' AND status = 'active'`,
+      [doctorId],
+    );
+    if (!doctor.rowCount) return res.status(400).json({ error: 'Choose an active veterinarian for this appointment.' });
+  }
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query('BEGIN');
+    transactionOpen = true;
+    const appointmentResult = await client.query(
+      `SELECT id, doctor_id, scheduled_at, duration_minutes
+       FROM appointments
+       WHERE id = $1 AND status = 'pending'
+         AND ($2 = 'admin' OR doctor_id IS NULL OR doctor_id = $3)
+       FOR UPDATE`,
+      [req.params.id, req.user.role, req.user.id],
+    );
+    const appointment = appointmentResult.rows[0];
+    if (!appointment) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(404).json({ error: 'That pending appointment request was not found or is assigned to another doctor.' });
+    }
+
+    if (status === 'confirmed') {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [doctorId]);
+      const conflict = await client.query(
+        `SELECT id FROM appointments
+         WHERE doctor_id = $1 AND status = 'confirmed' AND id <> $2
+           AND scheduled_at < $3::timestamptz + ($4::integer * interval '1 minute')
+           AND scheduled_at + (duration_minutes * interval '1 minute') > $3::timestamptz
+         LIMIT 1`,
+        [doctorId, appointment.id, appointment.scheduled_at, appointment.duration_minutes],
+      );
+      if (conflict.rowCount) {
+        await client.query('ROLLBACK');
+        transactionOpen = false;
+        return res.status(409).json({ error: 'That veterinarian has an overlapping confirmed visit. Choose another doctor or time.' });
+      }
+    }
+
+    const result = await client.query(
+      `UPDATE appointments
+       SET status = $2,
+           doctor_id = CASE WHEN $2 = 'confirmed' THEN $3 ELSE doctor_id END,
+           updated_at = now()
+       WHERE id = $1
+       RETURNING id, status`,
+      [appointment.id, status, doctorId],
+    );
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return res.json({ appointment: { id: result.rows[0].id, status: result.rows[0].status } });
+  } catch (error) {
+    if (transactionOpen) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Appointment decision rollback failed.', {
+          code: rollbackError.code ?? 'ROLLBACK_FAILED',
+        });
+      }
+    }
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'That time was just booked. Refresh the schedule and choose another slot.' });
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 }));
 
 app.get('/api/admin/doctor-applications', requireAdministrator, asyncRoute(async (_req, res) => {

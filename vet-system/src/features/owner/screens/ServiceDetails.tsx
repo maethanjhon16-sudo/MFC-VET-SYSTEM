@@ -73,7 +73,7 @@ export function ServiceDetails({ nav, service }: { nav: OwnerNav; service: Servi
               {line.text}
             </div>
           ))}
-          <button type="button" className={`${s.btn} ${s.btnTall} ${s.btnPrimary} ${s.btnFull}`} onClick={() => nav.soon('Book Step 1 – Pet')}>
+          <button type="button" className={`${s.btn} ${s.btnTall} ${s.btnPrimary} ${s.btnFull}`} onClick={() => nav.book(service.id)}>
             <Icon name="btn-calendar" size={18} />
             Book Service
           </button>
