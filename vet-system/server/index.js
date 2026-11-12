@@ -7,7 +7,12 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { databaseTargetFingerprint, ensureSchema, pool } from './database.js';
 import { hashPassword, verifyPassword } from './passwords.js';
-import { appointmentServices, isValidAppointmentTime, isWithinDoctorAvailability } from './appointmentRules.js';
+import {
+  appointmentServices,
+  availableAppointmentTimes,
+  isValidAppointmentTime,
+  isWithinDoctorAvailability,
+} from './appointmentRules.js';
 import { canTransitionOrderStatus } from './orderRules.js';
 import { productCatalog } from './productCatalog.js';
 
@@ -472,6 +477,74 @@ app.get('/api/owner/doctors', requireOwner, asyncRoute(async (_req, res) => {
       specialization: row.specialization,
       availability: row.availability,
     })),
+  });
+}));
+
+app.get('/api/owner/services', requireOwner, asyncRoute(async (_req, res) => {
+  const result = await pool.query(
+    `SELECT service_id AS "serviceId", is_enabled AS "isEnabled", updated_at AS "updatedAt"
+     FROM clinic_services`,
+  );
+  res.json({ services: result.rows });
+}));
+
+app.get('/api/owner/appointments/availability', requireOwner, asyncRoute(async (req, res) => {
+  const { date, serviceId } = req.query;
+  const preferredDoctorId = req.query.doctorId || null;
+  const service = appointmentServices.get(serviceId);
+  if (!validDateOnly(date)) return res.status(400).json({ error: 'Choose a valid appointment date.' });
+  if (!service) return res.status(400).json({ error: 'Choose a valid clinic service.' });
+  if (preferredDoctorId !== null && (typeof preferredDoctorId !== 'string' || !/^[0-9a-f-]{36}$/i.test(preferredDoctorId))) {
+    return res.status(400).json({ error: 'Choose a valid veterinarian or any available veterinarian.' });
+  }
+  const serviceSetting = await pool.query(
+    'SELECT is_enabled FROM clinic_services WHERE service_id = $1',
+    [serviceId],
+  );
+  if (!serviceSetting.rows[0]?.is_enabled) {
+    return res.status(400).json({ error: 'This clinic service is currently unavailable for booking.' });
+  }
+
+  const dayStart = new Date(`${date}T00:00:00+08:00`);
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+  const weekdayName = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Manila',
+    weekday: 'short',
+  }).format(dayStart);
+  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekdayName);
+  const doctorsResult = await pool.query(
+    `SELECT u.id, COALESCE(a.weekday, $1)::smallint AS weekday,
+            COALESCE(a.is_available, $1 BETWEEN 1 AND 6) AS is_available,
+            COALESCE(a.starts_at, '08:00'::time) AS starts_at,
+            COALESCE(a.ends_at, '18:00'::time) AS ends_at
+     FROM users u
+     LEFT JOIN doctor_availability a ON a.doctor_id = u.id AND a.weekday = $1
+     WHERE u.role = 'doctor' AND u.status = 'active'
+       AND ($2::text IS NULL OR u.id = $2)
+     ORDER BY u.full_name, u.id`,
+    [weekday, preferredDoctorId],
+  );
+  if (doctorsResult.rows.length === 0) return res.json({ times: [] });
+
+  const doctorIds = doctorsResult.rows.map((doctor) => doctor.id);
+  const appointmentsResult = await pool.query(
+    `SELECT doctor_id, scheduled_at, duration_minutes
+     FROM appointments
+     WHERE doctor_id = ANY($1::text[])
+       AND status IN ('pending', 'confirmed')
+       AND scheduled_at < $3::timestamptz
+       AND scheduled_at + (duration_minutes * interval '1 minute') > $2::timestamptz`,
+    [doctorIds, dayStart, dayEnd],
+  );
+
+  res.json({
+    times: availableAppointmentTimes(
+      date,
+      service.durationMinutes,
+      doctorsResult.rows,
+      appointmentsResult.rows,
+      preferredDoctorId,
+    ),
   });
 }));
 

@@ -7,6 +7,7 @@ import s from './Screens.module.css';
 interface OwnerServicesProps {
   nav: OwnerNav;
   chip: ServiceCategory | 'all';
+  enabledServiceIds: string[];
   onChip: (chip: ServiceCategory | 'all') => void;
 }
 
@@ -16,8 +17,11 @@ const STEPS = [
   { icon: 'step-check', title: '3 · Get confirmation', sub: 'We confirm by app and SMS' },
 ] as const;
 
-export function OwnerServices({ nav, chip, onChip }: OwnerServicesProps) {
-  const visible = chip === 'all' ? SERVICES : SERVICES.filter((svc) => svc.category === chip);
+export function OwnerServices({ nav, chip, enabledServiceIds, onChip }: OwnerServicesProps) {
+  const visible = SERVICES.filter((service) =>
+    enabledServiceIds.includes(service.id) && (chip === 'all' || service.category === chip),
+  );
+  const consultationEnabled = enabledServiceIds.includes('consultation');
 
   return (
     <div className={s.stack}>
@@ -25,14 +29,14 @@ export function OwnerServices({ nav, chip, onChip }: OwnerServicesProps) {
         <div className={s.title}>
           <span className={s.eyebrow}>ACTIONS</span>
           <h1>Veterinary services</h1>
-          <p>Eight ways we care for your pet — explore a service or book in a few clicks.</p>
+          <p>Explore the services currently available from the clinic and request a visit.</p>
         </div>
         <div className={s.headerActions}>
           <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={nav.messages}>
             <Icon name="chat-sm" size={18} />
             Message Clinic
           </button>
-          <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => nav.book()}>
+          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={enabledServiceIds.length === 0} onClick={() => nav.book()}>
             <Icon name="plus-white" size={18} />
             Book Appointment
           </button>
@@ -53,9 +57,10 @@ export function OwnerServices({ nav, chip, onChip }: OwnerServicesProps) {
             type="button"
             className={`${s.btn} ${s.btnWhite}`}
             style={{ width: 210, boxShadow: 'var(--shadow-cta)' }}
+            disabled={!consultationEnabled}
             onClick={() => nav.book('consultation')}
           >
-            Book Consultation
+            {consultationEnabled ? 'Book Consultation' : 'Consultation unavailable'}
           </button>
         </div>
         <Photo emoji="🐕" tone="sand" size={130} width={420} height={260} />

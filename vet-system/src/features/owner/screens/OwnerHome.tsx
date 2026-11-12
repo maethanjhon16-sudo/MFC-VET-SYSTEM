@@ -362,7 +362,9 @@ function UpcomingAppointments({ nav }: { nav: OwnerNav }) {
   );
 }
 
-export function OwnerHome({ nav, ownerName }: { nav: OwnerNav; ownerName: string }) {
+export function OwnerHome({ nav, ownerName, enabledServiceIds }: { nav: OwnerNav; ownerName: string; enabledServiceIds: string[] }) {
+  const enabledServices = SERVICES.filter((service) => enabledServiceIds.includes(service.id));
+
   return (
     <div className={s.stack}>
       <div className={s.pageHeader}>
@@ -446,12 +448,13 @@ export function OwnerHome({ nav, ownerName }: { nav: OwnerNav; ownerName: string
       <RailSection
         title="Featured services"
         subtitle="Everything your pet needs, under one roof"
-        linkLabel="All 8 services"
+        linkLabel={`All ${enabledServices.length} services`}
         onLink={() => nav.services()}
       >
-        {SERVICES.map((svc) => (
+        {enabledServices.map((svc) => (
           <ServiceMiniCard key={svc.id} service={svc} width={206} onOpen={() => nav.service(svc.id)} />
         ))}
+        {enabledServices.length === 0 && <p className={s.empty}>The clinic has no services available for booking right now.</p>}
       </RailSection>
 
       <RailSection title="Recommended for your pets" linkLabel="Visit shop" onLink={() => nav.shop()}>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, type FormEvent } from 'react';
 import {
   cancelOwnerAppointment,
   createOwnerAppointment,
+  getOwnerAvailableTimes,
   getBookingDoctors,
   getOwnerAppointments,
   getOwnerPets,
@@ -10,7 +11,6 @@ import {
   type OwnerPet,
 } from '../../auth/api';
 import { SERVICES, getService } from '../data';
-import type { Service } from '../types';
 import styles from './AppointmentScreens.module.css';
 
 function manilaDate(offsetDays = 0): string {
@@ -24,49 +24,6 @@ function manilaDate(offsetDays = 0): string {
   const date = new Date(`${dateParts.year}-${dateParts.month}-${dateParts.day}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + offsetDays);
   return date.toISOString().slice(0, 10);
-}
-
-function serviceMinutes(service: Service): number {
-  const durations: Record<string, number> = {
-    consultation: 30,
-    vaccination: 30,
-    deworming: 30,
-    confinement: 60,
-    surgery: 240,
-    'lab-test': 30,
-    'home-service': 60,
-    grooming: 90,
-  };
-  return durations[service.id] ?? 30;
-}
-
-function availableTimes(
-  date: string,
-  duration: number,
-  doctors: BookingDoctor[],
-  selectedDoctorId: string,
-  includePast = false,
-): string[] {
-  const day = new Date(`${date}T12:00:00Z`).getUTCDay();
-  const relevantDoctors = selectedDoctorId
-    ? doctors.filter((doctor) => doctor.id === selectedDoctorId)
-    : doctors;
-  const schedules = relevantDoctors
-    .map((doctor) => doctor.availability.find((item) => item.weekday === day))
-    .filter((schedule) => schedule?.isAvailable);
-  const times: string[] = [];
-  for (let minutes = 0; minutes + duration <= 24 * 60; minutes += 30) {
-    const fitsSchedule = schedules.some((schedule) => {
-      if (!schedule) return false;
-      const start = Number(schedule.startsAt.slice(0, 2)) * 60 + Number(schedule.startsAt.slice(3, 5));
-      const end = Number(schedule.endsAt.slice(0, 2)) * 60 + Number(schedule.endsAt.slice(3, 5));
-      return minutes >= start && minutes + duration <= end;
-    });
-    if (!fitsSchedule) continue;
-    const time = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-    if (includePast || new Date(`${date}T${time}:00+08:00`).getTime() > Date.now()) times.push(time);
-  }
-  return times;
 }
 
 function displayDate(value: string): string {
@@ -102,8 +59,11 @@ interface BookingState {
   notes: string;
   doctors: BookingDoctor[];
   pets: OwnerPet[];
+  availableTimes: string[];
   loadingDoctors: boolean;
   loadingPets: boolean;
+  loadingTimes: boolean;
+  timesError: string | null;
   submitting: boolean;
   error: string | null;
 }
@@ -114,6 +74,9 @@ type BookingAction =
   | { type: 'DOCTORS_FAILED'; message: string }
   | { type: 'PETS_LOADED'; pets: OwnerPet[] }
   | { type: 'PETS_FAILED'; message: string }
+  | { type: 'TIMES_LOADING' }
+  | { type: 'TIMES_LOADED'; times: string[] }
+  | { type: 'TIMES_FAILED'; message: string }
   | { type: 'SUBMITTING' }
   | { type: 'FAILED'; message: string };
 
@@ -134,6 +97,18 @@ function bookingReducer(state: BookingState, action: BookingAction): BookingStat
       };
     case 'PETS_FAILED':
       return { ...state, loadingPets: false, error: action.message };
+    case 'TIMES_LOADING':
+      return { ...state, availableTimes: [], loadingTimes: true, timesError: null };
+    case 'TIMES_LOADED':
+      return {
+        ...state,
+        availableTimes: action.times,
+        time: action.times.includes(state.time) ? state.time : action.times[0] ?? '',
+        loadingTimes: false,
+        timesError: null,
+      };
+    case 'TIMES_FAILED':
+      return { ...state, availableTimes: [], loadingTimes: false, timesError: action.message };
     case 'SUBMITTING':
       return { ...state, submitting: true, error: null };
     case 'FAILED':
@@ -146,44 +121,37 @@ function bookingReducer(state: BookingState, action: BookingAction): BookingStat
 export function AppointmentBooking({
   serviceId,
   initialPetId = '',
+  enabledServiceIds,
   onCancel,
   onBooked,
   onManagePets,
 }: {
   serviceId: string;
   initialPetId?: string;
+  enabledServiceIds: string[];
   onCancel: () => void;
   onBooked: () => void;
   onManagePets: () => void;
 }) {
-  const service = getService(serviceId);
+  const initialServiceId = enabledServiceIds.includes(serviceId) ? serviceId : enabledServiceIds[0] ?? serviceId;
   const [state, dispatch] = useReducer(bookingReducer, {
     petId: initialPetId,
-    serviceId: service.id,
+    serviceId: initialServiceId,
     doctorId: '',
     date: manilaDate(1),
     time: '09:00',
     notes: '',
     doctors: [],
     pets: [],
+    availableTimes: [],
     loadingDoctors: true,
     loadingPets: true,
+    loadingTimes: true,
+    timesError: null,
     submitting: false,
     error: null,
   });
-  const slots = availableTimes(
-    state.date,
-    serviceMinutes(getService(state.serviceId)),
-    state.doctors,
-    state.doctorId,
-  );
-  const scheduledSlots = slots.length > 0 ? slots : availableTimes(
-    state.date,
-    serviceMinutes(getService(state.serviceId)),
-    state.doctors,
-    state.doctorId,
-    true,
-  );
+  const slots = state.availableTimes;
   const selectedWeekday = new Date(`${state.date}T12:00:00Z`).getUTCDay();
   const selectedDoctor = state.doctors.find((doctor) => doctor.id === state.doctorId);
   const selectedDoctorDay = selectedDoctor?.availability.find((item) => item.weekday === selectedWeekday);
@@ -210,6 +178,46 @@ export function AppointmentBooking({
     void loadDoctors();
     void loadPets();
   }, [loadDoctors, loadPets]);
+
+  useEffect(() => {
+    if (enabledServiceIds.length > 0 && !enabledServiceIds.includes(state.serviceId)) {
+      dispatch({ type: 'SET_FIELD', field: 'serviceId', value: enabledServiceIds[0] ?? state.serviceId });
+    }
+  }, [enabledServiceIds, state.serviceId]);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      dispatch({ type: 'TIMES_LOADING' });
+      if (!enabledServiceIds.includes(state.serviceId)) {
+        if (active) dispatch({ type: 'TIMES_FAILED', message: 'This clinic service is currently unavailable for booking.' });
+        return;
+      }
+      try {
+        const { times } = await getOwnerAvailableTimes({
+          date: state.date,
+          serviceId: state.serviceId,
+          ...(state.doctorId ? { doctorId: state.doctorId } : {}),
+        });
+        if (active) dispatch({ type: 'TIMES_LOADED', times });
+      } catch (error) {
+        if (active) dispatch({ type: 'TIMES_FAILED', message: errorMessage(error, 'Could not check appointment availability.') });
+      }
+    };
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) void refresh();
+    };
+    void refresh();
+    const timer = window.setInterval(refreshIfVisible, 30_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
+  }, [enabledServiceIds, state.date, state.doctorId, state.serviceId]);
 
   useEffect(() => {
     const refreshIfVisible = () => {
@@ -323,8 +331,12 @@ export function AppointmentBooking({
                 required
                 value={state.serviceId}
                 onChange={(event) => dispatch({ type: 'SET_FIELD', field: 'serviceId', value: event.target.value })}
+                disabled={enabledServiceIds.length === 0}
               >
-                {SERVICES.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                {enabledServiceIds.length === 0
+                  ? <option value={state.serviceId}>No appointment services currently available</option>
+                  : SERVICES.filter((item) => enabledServiceIds.includes(item.id))
+                    .map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </label>
             <label className={styles.field}>
@@ -361,19 +373,7 @@ export function AppointmentBooking({
                   min={manilaDate()}
                   max={maxDate}
                   value={state.date}
-                  onChange={(event) => {
-                    const date = event.target.value;
-                    const nextSlots = availableTimes(
-                      date,
-                      serviceMinutes(selectedService),
-                      state.doctors,
-                      state.doctorId,
-                    );
-                    dispatch({ type: 'SET_FIELD', field: 'date', value: date });
-                    if (!nextSlots.includes(state.time) && nextSlots[0]) {
-                      dispatch({ type: 'SET_FIELD', field: 'time', value: nextSlots[0] });
-                    }
-                  }}
+                  onChange={(event) => dispatch({ type: 'SET_FIELD', field: 'date', value: event.target.value })}
                 />
               </label>
               <label className={styles.field}>
@@ -381,11 +381,12 @@ export function AppointmentBooking({
                 <select
                   name="time"
                   required
-                  value={slots.includes(state.time) ? state.time : slots[0] ?? ''}
+                  value={state.time}
                   onChange={(event) => dispatch({ type: 'SET_FIELD', field: 'time', value: event.target.value })}
-                  disabled={slots.length === 0}
+                  disabled={state.loadingTimes || slots.length === 0}
                 >
-                  {slots.length === 0 && <option value="">No available times for this date</option>}
+                  {state.loadingTimes && <option value="">Checking availability…</option>}
+                  {!state.loadingTimes && slots.length === 0 && <option value="">No available times for this date</option>}
                   {slots.map((time) => (
                     <option key={time} value={time}>
                       {new Date(`2000-01-01T${time}:00+08:00`).toLocaleTimeString('en-PH', {
@@ -396,12 +397,9 @@ export function AppointmentBooking({
                     </option>
                   ))}
                 </select>
-                {slots.length === 0 && (
-                  <small>
-                    {scheduledSlots.length === 0
-                      ? 'No veterinarian is scheduled for this date and service duration.'
-                      : 'No future appointment times remain on this date. Choose another date.'}
-                  </small>
+                {state.timesError && <small className={styles.error} role="alert">{state.timesError}</small>}
+                {!state.loadingTimes && !state.timesError && slots.length === 0 && (
+                  <small>No appointment times are available. Choose another date or veterinarian.</small>
                 )}
                 <small>Appointment times use Philippine local time (UTC+8).</small>
               </label>
@@ -425,7 +423,8 @@ export function AppointmentBooking({
           </div>
           {state.error && <p className={styles.error} role="alert">{state.error}</p>}
           {state.loadingDoctors && <p className={styles.helper} aria-live="polite">Loading clinic veterinarians…</p>}
-          <button type="submit" className={styles.primaryButton} disabled={state.submitting || state.loadingDoctors || slots.length === 0}>
+          {state.loadingTimes && <p className={styles.helper} aria-live="polite">Checking appointment availability…</p>}
+          <button type="submit" className={styles.primaryButton} disabled={state.submitting || state.loadingDoctors || state.loadingTimes || slots.length === 0 || !enabledServiceIds.includes(state.serviceId)}>
             {state.submitting ? 'Sending request…' : 'Request appointment'}
           </button>
           <button type="button" className={styles.cancelButton} onClick={onCancel}>Cancel</button>

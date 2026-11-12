@@ -235,6 +235,29 @@ export function getBookingDoctors() {
   return request<{ doctors: BookingDoctor[] }>('/api/owner/doctors', undefined, 'GET');
 }
 
+export interface OwnerServiceSetting {
+  serviceId: string;
+  isEnabled: boolean;
+  updatedAt: string;
+}
+
+export function getOwnerServices() {
+  return request<{ services: OwnerServiceSetting[] }>('/api/owner/services', undefined, 'GET');
+}
+
+export function getOwnerAvailableTimes(input: {
+  date: string;
+  serviceId: string;
+  doctorId?: string;
+}) {
+  const query = new URLSearchParams({
+    date: input.date,
+    serviceId: input.serviceId,
+    ...(input.doctorId ? { doctorId: input.doctorId } : {}),
+  });
+  return request<{ times: string[] }>(`/api/owner/appointments/availability?${query}`, undefined, 'GET');
+}
+
 export function getOwnerAppointments() {
   return request<{ appointments: Appointment[] }>('/api/owner/appointments', undefined, 'GET');
 }

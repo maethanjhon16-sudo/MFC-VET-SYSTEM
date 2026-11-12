@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { OwnerShell } from '../../components/owner/OwnerShell';
-import { getProduct, getService, PRODUCTS } from './data';
+import { getOwnerServices } from '../auth/api';
+import { getProduct, getService, PRODUCTS, SERVICES } from './data';
 import { cartCount, createInitialState, ownerReducer } from './ownerReducer';
 import { ComingSoon } from './screens/ComingSoon';
 import { OwnerHome } from './screens/OwnerHome';
@@ -76,6 +77,8 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
   const [state, dispatch] = useReducer(ownerReducer, initialScreen, createInitialState);
   const [cartReady, setCartReady] = useState(false);
   const [cartStorageError, setCartStorageError] = useState<string | null>(null);
+  const [enabledServiceIds, setEnabledServiceIds] = useState<string[]>(() => SERVICES.map((service) => service.id));
+  const [serviceSettingsError, setServiceSettingsError] = useState<string | null>(null);
 
   const nav = useMemo<OwnerNav>(
     () => ({
@@ -123,6 +126,36 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
     }
   }, [cartReady, ownerId, state.cart]);
 
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const { services } = await getOwnerServices();
+        if (active) {
+          setEnabledServiceIds(services.filter((service) => service.isEnabled).map((service) => service.serviceId));
+          setServiceSettingsError(null);
+        }
+      } catch (error) {
+        if (active) {
+          setServiceSettingsError(error instanceof Error ? error.message : 'Could not load clinic service availability.');
+        }
+      }
+    };
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) void refresh();
+    };
+    void refresh();
+    const timer = window.setInterval(refreshIfVisible, 30_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('focus', refreshIfVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('focus', refreshIfVisible);
+    };
+  }, []);
+
   // New page → start at the top.
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -148,15 +181,17 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
       onSignOut={onSignOut}
     >
       {cartStorageError && <p className={s.pageError} role="alert">Your cart could not be saved on this device. {cartStorageError}</p>}
-      {state.screen === 'owner-home' && <OwnerHome nav={nav} ownerName={ownerName} />}
+      {serviceSettingsError && <p className={s.pageError} role="alert">Could not refresh service availability. Booking requests are still checked by the clinic. {serviceSettingsError}</p>}
+      {state.screen === 'owner-home' && <OwnerHome nav={nav} ownerName={ownerName} enabledServiceIds={enabledServiceIds} />}
       {state.screen === 'owner-services' && (
-        <OwnerServices nav={nav} chip={state.servicesChip} onChip={(chip) => dispatch({ type: 'SET_SERVICES_CHIP', chip })} />
+        <OwnerServices nav={nav} chip={state.servicesChip} enabledServiceIds={enabledServiceIds} onChip={(chip) => dispatch({ type: 'SET_SERVICES_CHIP', chip })} />
       )}
-      {state.screen === 'service-details' && <ServiceDetails nav={nav} service={getService(state.serviceId)} />}
+      {state.screen === 'service-details' && <ServiceDetails nav={nav} service={getService(state.serviceId)} isEnabled={enabledServiceIds.includes(state.serviceId)} />}
       {state.screen === 'appointment-booking' && (
         <AppointmentBooking
           serviceId={state.serviceId}
           initialPetId={state.bookingPetId}
+          enabledServiceIds={enabledServiceIds}
           onCancel={nav.appointments}
           onBooked={nav.appointments}
           onManagePets={nav.home}

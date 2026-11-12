@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appointmentServices, isValidAppointmentTime, isWithinDoctorAvailability } from './appointmentRules.js';
+import {
+  appointmentServices,
+  availableAppointmentTimes,
+  isValidAppointmentTime,
+  isWithinDoctorAvailability,
+} from './appointmentRules.js';
 
 const now = Date.parse('2026-11-12T00:00:00.000Z');
 
@@ -57,4 +62,24 @@ test('allows a 30-minute consultation to start at 10:30 PM before an 11 PM close
 
   assert.equal(consultation.durationMinutes, 30);
   assert.equal(isWithinDoctorAvailability('2026-11-12T14:30:00.000Z', consultation.durationMinutes, thursdayHours), true);
+});
+
+test('appointment choices exclude occupied time and respect selected doctor', () => {
+  const doctors = [
+    { id: 'doctor-a', weekday: 1, is_available: true, starts_at: '09:00:00', ends_at: '12:00:00' },
+    { id: 'doctor-b', weekday: 1, is_available: true, starts_at: '09:00:00', ends_at: '12:00:00' },
+  ];
+  const appointments = [{
+    doctor_id: 'doctor-a',
+    scheduled_at: '2026-11-16T01:00:00.000Z',
+    duration_minutes: 60,
+  }];
+  const anyDoctor = availableAppointmentTimes('2026-11-16', 30, doctors, appointments, null, now);
+  const doctorA = availableAppointmentTimes('2026-11-16', 30, doctors, appointments, 'doctor-a', now);
+  const doctorB = availableAppointmentTimes('2026-11-16', 30, doctors, appointments, 'doctor-b', now);
+
+  assert.equal(anyDoctor.includes('09:00'), true);
+  assert.equal(doctorA.includes('09:00'), false);
+  assert.equal(doctorA.includes('10:00'), true);
+  assert.equal(doctorB.includes('09:00'), true);
 });
