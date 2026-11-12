@@ -69,15 +69,22 @@ export function LoginScreen({ variant, go, exit }: LoginScreenProps) {
   const { values, setField, toggleField } = useForm({ identifier: '', password: '', remember: true });
   const request = useRequestState();
 
-  const handleSubmit = async (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     request.start();
     try {
+      const formData = new FormData(event.currentTarget);
+      const identifier = formData.get('identifier');
+      const password = formData.get('password');
+      if (typeof identifier !== 'string' || typeof password !== 'string') {
+        throw new Error('Enter your email and password.');
+      }
+
       await login({
-        email: values.identifier.trim(),
-        password: values.password,
+        email: identifier.trim(),
+        password,
         role: variant === 'admin' ? 'admin' : variant,
-        remember: values.remember,
+        remember: formData.has('remember'),
       });
       exit(config.onLogin);
     } catch (error) {
