@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isValidAppointmentTime, isWithinDoctorAvailability } from './appointmentRules.js';
+import { appointmentServices, isValidAppointmentTime, isWithinDoctorAvailability } from './appointmentRules.js';
 
 const now = Date.parse('2026-11-12T00:00:00.000Z');
 
@@ -44,4 +44,17 @@ test('checks selected doctor availability using Manila weekday and hours', () =>
     ends_at: '22:00:00',
   }), false);
   assert.equal(isWithinDoctorAvailability('2026-11-16T01:00:00.000Z', 60, null), false);
+});
+
+test('allows a 30-minute consultation to start at 10:30 PM before an 11 PM close', () => {
+  const consultation = appointmentServices.get('consultation');
+  const thursdayHours = {
+    weekday: 4,
+    is_available: true,
+    starts_at: '08:00:00',
+    ends_at: '23:00:00',
+  };
+
+  assert.equal(consultation.durationMinutes, 30);
+  assert.equal(isWithinDoctorAvailability('2026-11-12T14:30:00.000Z', consultation.durationMinutes, thursdayHours), true);
 });

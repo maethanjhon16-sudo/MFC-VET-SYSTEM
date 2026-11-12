@@ -28,7 +28,7 @@ function manilaDate(offsetDays = 0): string {
 
 function serviceMinutes(service: Service): number {
   const durations: Record<string, number> = {
-    consultation: 45,
+    consultation: 30,
     vaccination: 30,
     deworming: 30,
     confinement: 60,
