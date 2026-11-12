@@ -148,7 +148,7 @@
 .patientForm .primaryButton { min-height: 38px; }
 
 .layout { grid-template-columns: 264px minmax(0, 1fr); background: var(--color-off); }
-.sidebar { gap: 0; padding: 26px 20px 20px; background: var(--color-forest); }
+.sidebar { align-self: start; height: 100vh; max-height: 100vh; overflow-y: auto; gap: 0; padding: 26px 20px 20px; background: var(--color-forest); }
 .brand { gap: 12px; padding: 0 0 18px; border-bottom: 0; font-size: 16px; font-weight: 800; letter-spacing: 0; }
 .brandMark { width: 46px; height: 46px; border-radius: 50%; }
 .brand small { margin-top: 2px; color: var(--color-sagemid); font-size: 11px; font-weight: 600; letter-spacing: 0; }
@@ -241,7 +241,7 @@
 }
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; }
-  .sidebar { position: static; min-height: auto; }
+  .sidebar { position: static; height: auto; max-height: none; min-height: auto; overflow: visible; }
   .topbar { position: static; align-items: stretch; gap: 12px; padding: 14px 18px; }
   .topSearch { flex-basis: auto; }
   .topProfile { width: 44px; overflow: hidden; padding-right: 6px; font-size: 0; }

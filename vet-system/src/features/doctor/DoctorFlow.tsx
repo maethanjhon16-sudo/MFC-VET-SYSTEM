@@ -2,10 +2,16 @@ import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import { Icon } from '../../components/ui/Icon';
 import {
   decideStaffAppointment,
+  getStaffClinicalRecords,
+  getStaffFollowUps,
+  getStaffLabResults,
   getStaffPatients,
   getStaffSchedule,
   type Appointment as ApiAppointment,
+  type ClinicalRecord as ApiClinicalRecord,
   type DoctorPatient,
+  type LabResult as ApiLabResult,
+  type StaffFollowUp,
 } from '../auth/api';
 import { CLINIC_ADDRESS, CLINIC_HOURS, getClinicGreeting } from '../clinicInfo';
 import { DoctorWorkspacePages, type DoctorAuxiliaryView } from './DoctorWorkspacePages';
@@ -37,6 +43,14 @@ type Patient = {
   lastVisit: string;
   note: string;
 };
+
+function petEmoji(species: string): string {
+  if (species === 'Dog') return '🐕';
+  if (species === 'Cat') return '🐈';
+  if (species === 'Bird') return '🐦';
+  if (species === 'Rabbit') return '🐇';
+  return '🐾';
+}
 
 function localDate(daysFromToday: number): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -130,12 +144,18 @@ function mapAppointment(appointment: ApiAppointment): Appointment {
 }
 
 interface DoctorState {
+  doctorName: string;
   view: DoctorView;
   patients: Patient[];
   appointments: Appointment[];
+  labResults: ApiLabResult[];
+  followUps: StaffFollowUp[];
   search: string;
   selectedAppointmentId: string | null;
   selectedPatientId: string | null;
+  patientRecords: ApiClinicalRecord[];
+  patientRecordsLoading: boolean;
+  patientRecordsError: string | null;
   weekOffset: number;
   message: string;
   appointmentsLoading: boolean;
@@ -147,28 +167,39 @@ interface DoctorState {
 
 type DoctorAction =
   | { type: 'NAVIGATE'; view: DoctorView }
+  | { type: 'DOCTOR_NAME_UPDATED'; name: string }
   | { type: 'SET_SEARCH'; value: string }
   | { type: 'OPEN_APPOINTMENT'; id: string }
   | { type: 'OPEN_PATIENT'; id: string }
+  | { type: 'PATIENT_RECORDS_LOADING' }
+  | { type: 'PATIENT_RECORDS_LOADED'; records: ApiClinicalRecord[] }
+  | { type: 'PATIENT_RECORDS_FAILED'; message: string }
   | { type: 'BACK' }
   | { type: 'APPOINTMENTS_LOADED'; appointments: ApiAppointment[] }
   | { type: 'APPOINTMENTS_FAILED'; message: string }
   | { type: 'PATIENTS_LOADED'; patients: DoctorPatient[] }
   | { type: 'PATIENTS_FAILED'; message: string }
+  | { type: 'CLINICAL_DATA_LOADED'; labResults: ApiLabResult[]; followUps: StaffFollowUp[] }
   | { type: 'SAVING_APPOINTMENT'; id: string }
   | { type: 'APPOINTMENT_DECIDED'; id: string; status: 'Confirmed' | 'Declined' }
   | { type: 'APPOINTMENT_ACTION_FAILED'; message: string }
   | { type: 'MOVE_WEEK'; amount: number }
   | { type: 'CLEAR_MESSAGE' };
 
-function createInitialState(): DoctorState {
+function createInitialState(doctorName: string): DoctorState {
   return {
+    doctorName,
     view: 'dashboard',
     patients: [],
     appointments: [],
+    labResults: [],
+    followUps: [],
     search: '',
     selectedAppointmentId: null,
     selectedPatientId: null,
+    patientRecords: [],
+    patientRecordsLoading: false,
+    patientRecordsError: null,
     weekOffset: 0,
     message: '',
     appointmentsLoading: true,
@@ -183,12 +214,20 @@ function doctorReducer(state: DoctorState, action: DoctorAction): DoctorState {
   switch (action.type) {
     case 'NAVIGATE':
       return { ...state, view: action.view, message: '' };
+    case 'DOCTOR_NAME_UPDATED':
+      return { ...state, doctorName: action.name };
     case 'SET_SEARCH':
       return { ...state, search: action.value };
     case 'OPEN_APPOINTMENT':
       return { ...state, view: 'appointment-details', selectedAppointmentId: action.id, message: '' };
     case 'OPEN_PATIENT':
-      return { ...state, view: 'patient-details', selectedPatientId: action.id, message: '' };
+      return { ...state, view: 'patient-details', selectedPatientId: action.id, patientRecords: [], patientRecordsLoading: true, patientRecordsError: null, message: '' };
+    case 'PATIENT_RECORDS_LOADING':
+      return { ...state, patientRecordsLoading: true, patientRecordsError: null };
+    case 'PATIENT_RECORDS_LOADED':
+      return { ...state, patientRecords: action.records, patientRecordsLoading: false, patientRecordsError: null };
+    case 'PATIENT_RECORDS_FAILED':
+      return { ...state, patientRecordsLoading: false, patientRecordsError: action.message };
     case 'BACK':
       return { ...state, view: state.view === 'appointment-details' ? 'appointments' : 'patients', message: '' };
     case 'APPOINTMENTS_LOADED':
@@ -204,6 +243,8 @@ function doctorReducer(state: DoctorState, action: DoctorAction): DoctorState {
       return { ...state, patients: action.patients.map(mapPatient), patientsLoading: false, patientsError: null };
     case 'PATIENTS_FAILED':
       return { ...state, patientsLoading: false, patientsError: action.message };
+    case 'CLINICAL_DATA_LOADED':
+      return { ...state, labResults: action.labResults, followUps: action.followUps };
     case 'SAVING_APPOINTMENT':
       return { ...state, savingAppointmentId: action.id, appointmentsError: null };
     case 'APPOINTMENT_DECIDED':
@@ -267,9 +308,8 @@ interface DoctorFlowProps {
 }
 
 export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
-  const [state, dispatch] = useReducer(doctorReducer, undefined, createInitialState);
+  const [state, dispatch] = useReducer(doctorReducer, doctorName, createInitialState);
   const today = localDate(0);
-  const doctorInitials = doctorName.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
   const loadSchedule = useCallback(async () => {
     try {
       const { appointments } = await getStaffSchedule();
@@ -294,16 +334,43 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
     }
   }, []);
 
+  const loadClinicalData = useCallback(async () => {
+    try {
+      const [{ labResults }, { followUps }] = await Promise.all([getStaffLabResults(), getStaffFollowUps()]);
+      dispatch({ type: 'CLINICAL_DATA_LOADED', labResults, followUps });
+    } catch (error) {
+      dispatch({
+        type: 'APPOINTMENTS_FAILED',
+        message: error instanceof Error ? error.message : 'Could not load clinical reminders.',
+      });
+    }
+  }, []);
+
+  const loadPatientRecords = useCallback(async (petId: string) => {
+    dispatch({ type: 'PATIENT_RECORDS_LOADING' });
+    try {
+      const { records } = await getStaffClinicalRecords();
+      dispatch({ type: 'PATIENT_RECORDS_LOADED', records: records.filter((record) => record.petId === petId) });
+    } catch (error) {
+      dispatch({
+        type: 'PATIENT_RECORDS_FAILED',
+        message: error instanceof Error ? error.message : 'Could not load this patient’s clinical records.',
+      });
+    }
+  }, []);
+
   useEffect(() => {
     void loadSchedule();
     void loadPatients();
-  }, [loadPatients, loadSchedule]);
+    void loadClinicalData();
+  }, [loadClinicalData, loadPatients, loadSchedule]);
 
   useEffect(() => {
     const refreshIfVisible = () => {
       if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
       void loadSchedule();
       void loadPatients();
+      void loadClinicalData();
     };
     const timer = window.setInterval(refreshIfVisible, 30_000);
     document.addEventListener('visibilitychange', refreshIfVisible);
@@ -313,11 +380,18 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
       document.removeEventListener('visibilitychange', refreshIfVisible);
       window.removeEventListener('focus', refreshIfVisible);
     };
-  }, [loadPatients, loadSchedule]);
+  }, [loadClinicalData, loadPatients, loadSchedule]);
 
   const pendingCount = state.appointments.filter((item) => item.status === 'Pending').length;
   const appointmentsToday = state.appointments.filter((item) => item.date === today && item.status !== 'Declined');
-  const upcomingConfirmed = state.appointments.filter((item) => item.date >= today && item.status === 'Confirmed').length;
+  const pendingLabs = state.labResults.filter((item) => item.status === 'pending' || item.status === 'in_lab').slice(0, 3);
+  const readyLabCount = state.labResults.filter((item) => item.status === 'ready').length;
+  const overdueFollowUpCount = state.followUps.filter((item) => item.followUpAt.slice(0, 10) < today).length;
+  const clinicReminders = [
+    ...(readyLabCount > 0 ? [{ key: 'labs', text: `${readyLabCount} lab result${readyLabCount === 1 ? '' : 's'} ready for review`, icon: 'flask' as const }] : []),
+    ...(overdueFollowUpCount > 0 ? [{ key: 'follow-ups', text: `${overdueFollowUpCount} follow-up case${overdueFollowUpCount === 1 ? '' : 's'} overdue`, icon: 'clock' as const }] : []),
+    ...(pendingCount > 0 ? [{ key: 'appointments', text: `${pendingCount} appointment request${pendingCount === 1 ? '' : 's'} need review`, icon: 'bell' as const }] : []),
+  ];
   const selectedAppointment = state.appointments.find((item) => item.id === state.selectedAppointmentId);
   const selectedPatient = state.patients.find((item) => item.id === state.selectedPatientId);
   const visiblePatients = useMemo(() => {
@@ -349,6 +423,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
       return;
     }
     dispatch({ type: 'OPEN_PATIENT', id });
+    void loadPatientRecords(id);
   };
   const decideAppointment = async (id: string, decision: 'confirm' | 'decline') => {
     dispatch({ type: 'SAVING_APPOINTMENT', id });
@@ -393,8 +468,8 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
         <div className={styles.sidebarBottom}>
           <div className={styles.clinicStatus}><span />Clinic hours<small>{CLINIC_HOURS}</small></div>
           <div className={styles.doctorCard}>
-            <span className={styles.avatar}>{doctorInitials}</span>
-            <span><b>{doctorName}</b><small>Veterinarian</small></span>
+            <span className={styles.avatar}>🩺</span>
+            <span><b>{state.doctorName}</b><small>Veterinarian</small></span>
           </div>
           <button type="button" className={styles.signOut} onClick={onSignOut}><span>↪</span>Sign out</button>
         </div>
@@ -413,10 +488,11 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
             />
           </label>
           <div className={styles.topActions}>
+            <button type="button" className={styles.notification} aria-label="Doctor inbox" onClick={() => navigate('inbox')}><Icon name="chat" size={20} /></button>
             <button type="button" className={styles.notification} aria-label={`Appointment requests, ${pendingCount} pending`} onClick={() => navigate('appointments')}>
               <Icon name="bell" size={20} />{pendingCount > 0 && <i>{pendingCount}</i>}
             </button>
-            <button type="button" className={styles.topProfile} onClick={() => navigate('patients')}><span className={styles.avatarSmall}>{doctorInitials}</span>{doctorName}</button>
+            <button type="button" className={styles.topProfile} onClick={() => navigate('patients')}><span className={styles.avatarSmall}>🩺</span>{state.doctorName}</button>
           </div>
         </header>
 
@@ -429,12 +505,12 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
               <section className={styles.welcome}>
                 <div>
                   <p className={styles.eyebrow}>VET DOCTOR WORKSPACE</p>
-                  <h1>{getClinicGreeting()}, {doctorName}</h1>
+                  <h1>{getClinicGreeting()}, {state.doctorName}</h1>
                   <p>{new Date(`${today}T12:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} · {appointmentsToday.length} appointments today</p>
                 </div>
                 <div className={styles.welcomeActions}>
                   <button type="button" className={styles.secondaryButton} onClick={() => navigate('patients')}><Icon name="search" size={18} />Search patient</button>
-                  <button type="button" className={styles.secondaryButton} onClick={() => navigate('patients')}><Icon name="file" size={18} />Open record</button>
+                  <button type="button" className={styles.secondaryButton} onClick={() => navigate('records')}><Icon name="file" size={18} />Open record</button>
                   <button type="button" className={styles.primaryButton} onClick={() => navigate('appointments')}><Icon name="bell" size={18} />Appointment requests</button>
                 </div>
               </section>
@@ -444,7 +520,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
                   <span className={styles.metricIcon}><Icon name="nav-calendar" size={23} /></span>
                   <span className={styles.metricText}><span>Today's appointments</span><b>{appointmentsToday.length}</b><small>Across your schedule</small></span>
                 </button>
-                <button type="button" className={styles.metricCard} onClick={() => navigate('appointments')}>
+                <button type="button" className={styles.metricCard} onClick={() => navigate('follow-ups')}>
                   <span className={`${styles.metricIcon} ${styles.goldIcon}`}><Icon name="bell" size={23} /></span>
                   <span className={styles.metricText}><span>Pending requests</span><b>{pendingCount}</b><small>Needs review</small></span>
                 </button>
@@ -454,7 +530,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
                 </button>
                 <button type="button" className={styles.metricCard} onClick={() => navigate('appointments')}>
                   <span className={`${styles.metricIcon} ${styles.blueIcon}`}><Icon name="pulse-card" size={23} /></span>
-                  <span className={styles.metricText}><span>Upcoming confirmed</span><b>{upcomingConfirmed}</b><small>Booked visits</small></span>
+                  <span className={styles.metricText}><span>Follow-up cases</span><b>{state.followUps.length}</b><small>From clinical records</small></span>
                 </button>
               </section>
 
@@ -467,24 +543,24 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
                 </article>
                 <div className={styles.dashboardRight}>
                   <article className={styles.panel}>
-                    <div className={styles.panelHeader}><div><h2>Appointment requests</h2><p>Review new booking requests</p></div><span className={styles.requestCount}>{pendingCount} new</span></div>
+                    <div className={styles.panelHeader}><div><h2>Pending lab results</h2><p>Tests being processed or awaiting results</p></div><button type="button" className={styles.textButton} onClick={() => navigate('labs')}>All results →</button></div>
                     <div className={styles.requestList}>
-                      {state.appointments.filter((item) => item.status === 'Pending').slice(0, 4).map((item) => (
+                      {pendingLabs.map((item) => (
                         <div className={styles.request} key={item.id}>
-                          <div className={styles.petAvatar}>{item.species === 'Dog' ? '🐕' : item.species === 'Cat' ? '🐈' : '🐇'}</div>
-                          <div className={styles.requestInfo}><b>{item.pet} <span>· {item.owner}</span></b><small>{item.service} · {dateLabel(item.date)}, {item.time}</small></div>
-                          <button type="button" className={styles.iconLink} aria-label={`Review ${item.pet} request`} onClick={() => openAppointment(item.id)}>›</button>
+                          <div className={styles.petAvatar}><Icon name="flask" size={20} /></div>
+                          <div className={styles.requestInfo}><b>{item.petName} <span>· {item.testName}</span></b><small>{item.status === 'in_lab' ? 'In lab' : 'Pending'} · {new Date(item.requestedAt).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })}</small></div>
+                          <button type="button" className={styles.iconLink} aria-label={`Open lab results for ${item.petName}`} onClick={() => navigate('labs')}>›</button>
                         </div>
                       ))}
-                      {pendingCount === 0 && <p className={styles.emptyNotice}>No requests need review.</p>}
+                      {pendingLabs.length === 0 && <p className={styles.emptyNotice}>No pending lab results.</p>}
                     </div>
-                    <button type="button" className={styles.secondaryButton} onClick={() => navigate('appointments')}>Manage requests</button>
+                    <button type="button" className={styles.secondaryButton} onClick={() => navigate('labs')}>Manage lab results</button>
                   </article>
                   <article className={`${styles.panel} ${styles.clinicPanel}`}>
-                    <div className={styles.panelHeader}><div><h2>Clinic information</h2><p>Today at MFC PET LIFE</p></div></div>
+                    <div className={styles.panelHeader}><div><h2>Clinical reminders</h2><p>Items that may need your attention</p></div></div>
                     <div className={styles.clinicInfo}>
-                      <p><Icon name="info-clock" size={18} /><span><b>Clinic hours</b><small>{CLINIC_HOURS}</small></span></p>
-                      <p><Icon name="info-pin" size={18} /><span><b>Clinic address</b><small>{CLINIC_ADDRESS}</small></span></p>
+                      {clinicReminders.map((reminder) => <p key={reminder.key}><Icon name={reminder.icon} size={18} /><span><b>{reminder.text}</b><small>Open {reminder.key}</small></span></p>)}
+                      {clinicReminders.length === 0 && <p className={styles.emptyNotice}>No clinical reminders.</p>}
                     </div>
                   </article>
                 </div>
@@ -495,7 +571,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
                 <div className={styles.recentPatients}>
                   {state.patients.map((patient) => (
                     <button type="button" className={styles.recentPatient} key={patient.id} onClick={() => openPatient(patient.id)}>
-                      <span className={`${styles.petAvatar} ${styles.recentAvatar}`}>{patient.species === 'Dog' ? '🐕' : patient.species === 'Cat' ? '🐈' : '🐇'}</span>
+                      <span className={`${styles.petAvatar} ${styles.recentAvatar}`}>{petEmoji(patient.species)}</span>
                       <span><b>{patient.name}</b><small>{patient.breed}</small></span>
                     </button>
                   ))}
@@ -543,7 +619,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
                   <tbody>{state.patientsLoading
                     ? <tr><td className={styles.empty} colSpan={6}>Loading assigned patient profiles…</td></tr>
                     : visiblePatients.map((patient) => <tr key={patient.id}>
-                    <td><button type="button" className={styles.patientCell} onClick={() => openPatient(patient.id)}><span className={styles.petAvatar}>{patient.species === 'Dog' ? '🐕' : patient.species === 'Cat' ? '🐈' : '🐇'}</span><span><b>{patient.name}</b><small>{patient.species}</small></span></button></td>
+                    <td><button type="button" className={styles.patientCell} onClick={() => openPatient(patient.id)}><span className={styles.petAvatar}>{petEmoji(patient.species)}</span><span><b>{patient.name}</b><small>{patient.species}</small></span></button></td>
                     <td>{patient.owner}</td><td>{patient.breed}</td><td>{patient.age}</td><td>{patient.lastVisit}</td>
                     <td><button type="button" className={styles.textButton} onClick={() => openPatient(patient.id)}>View profile →</button></td>
                   </tr>)}
@@ -556,8 +632,13 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
           {state.view === 'patient-details' && selectedPatient && (
             <section className={styles.panel}>
               <button type="button" className={styles.backButton} onClick={() => navigate('patients')}>←&nbsp; Patient directory</button>
-              <div className={styles.profileHeader}><span className={`${styles.petAvatar} ${styles.largePet}`}>{selectedPatient.species === 'Dog' ? '🐕' : selectedPatient.species === 'Cat' ? '🐈' : '🐇'}</span><div><h1>{selectedPatient.name}</h1><p>{selectedPatient.breed} · {selectedPatient.age} · {selectedPatient.species}</p><span>Patient ID: MFC-{selectedPatient.id.toUpperCase()}</span></div><button type="button" className={styles.secondaryButton} onClick={() => navigate('appointments')}>Book follow-up</button></div>
-              <div className={styles.profileGrid}><article className={styles.detailCard}><h2>Owner information</h2><p><b>{selectedPatient.owner}</b><small>Pet owner</small></p><p><b>{selectedPatient.ownerEmail}</b><small>{selectedPatient.ownerPhone || 'No phone number on file'}</small></p></article><article className={styles.detailCard}><h2>Clinical records</h2><p>{selectedPatient.note}</p><small>Last confirmed visit · {selectedPatient.lastVisit}</small></article></div>
+              <div className={styles.profileHeader}><span className={`${styles.petAvatar} ${styles.largePet}`}>{petEmoji(selectedPatient.species)}</span><div><h1>{selectedPatient.name}</h1><p>{selectedPatient.breed} · {selectedPatient.age} · {selectedPatient.species}</p><span>Patient ID: MFC-{selectedPatient.id.toUpperCase()}</span></div><button type="button" className={styles.secondaryButton} onClick={() => navigate('appointments')}>Book follow-up</button></div>
+              <div className={styles.profileGrid}><article className={styles.detailCard}><h2>Owner information</h2><p><b>{selectedPatient.owner}</b><small>Pet owner</small></p><p><b>{selectedPatient.ownerEmail}</b><small>{selectedPatient.ownerPhone || 'No phone number on file'}</small></p></article><article className={styles.detailCard}><h2>Clinical records</h2>
+                {state.patientRecordsLoading && <p>Loading clinical records…</p>}
+                {state.patientRecordsError && <p role="alert">{state.patientRecordsError}</p>}
+                {!state.patientRecordsLoading && !state.patientRecordsError && state.patientRecords.length === 0 && <p>No clinical notes have been recorded for this pet yet.</p>}
+                {state.patientRecords.map((record) => <p key={record.id}><b>{record.recordType} · {new Date(record.createdAt).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })}</b><small>{record.summary}</small></p>)}
+              </article></div>
               <div className={styles.panelHeader}><div><h2>Visit history</h2><p>Appointments for {selectedPatient.name}</p></div></div>
               <AppointmentTable appointments={state.appointments.filter((item) => item.petId === selectedPatient.id)} onOpen={openAppointment} />
             </section>
@@ -584,6 +665,7 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
               appointments={state.appointments}
               onNavigate={navigate}
               onOpenPatient={openPatient}
+              onProfileUpdated={(name) => dispatch({ type: 'DOCTOR_NAME_UPDATED', name })}
             />
           )}
         </div>
