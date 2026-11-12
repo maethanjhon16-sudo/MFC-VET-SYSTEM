@@ -1,6 +1,40 @@
-import { useMemo, useReducer } from 'react';
-import type { ReactNode } from 'react';
+import { useEffect, useMemo, useReducer } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { Icon } from '../../components/ui/Icon';
+import {
+  getStaffAvailability,
+  getStaffClinicalRecords,
+  getStaffConversationMessages,
+  getStaffConversations,
+  getStaffFollowUps,
+  getStaffInventory,
+  getStaffLabResults,
+  getStaffOrders,
+  getStaffPreferences,
+  getStaffProfile,
+  getStaffServices,
+    createStaffClinicalRecord,
+    createStaffLabResult,
+    reviewStaffLabResult,
+    sendStaffMessage,
+    setStaffInventoryQuantity,
+    setStaffServiceEnabled,
+    saveStaffAvailability,
+    saveStaffPreferences,
+    startStaffConversation,
+    updateStaffProfile,
+  type ClinicalRecord as ApiClinicalRecord,
+  type ClinicServiceSetting,
+  type DoctorAvailabilityDay,
+  type DoctorNotificationSettings,
+  type InventoryItem,
+  type LabResult as ApiLabResult,
+  type StaffConversation,
+  type StaffFollowUp,
+  type StaffMessage,
+  type StaffOrder,
+  type StaffProfile,
+} from '../auth/api';
 import { PRODUCTS, SERVICES } from '../owner/data';
 import type { Product, Service } from '../owner/types';
 import styles from './DoctorWorkspacePages.module.css';
@@ -44,34 +78,78 @@ type FilterKey = 'record' | 'lab' | 'follow-up' | 'service' | 'order';
 type WorkspaceState = {
   query: string;
   filters: Record<FilterKey, string>;
-  reviewedLabs: string[];
+  records: ApiClinicalRecord[];
+  labResults: ApiLabResult[];
+  followUps: StaffFollowUp[];
+  conversations: StaffConversation[];
+  messages: StaffMessage[];
+  services: ClinicServiceSetting[];
+  inventory: InventoryItem[];
+  orders: StaffOrder[];
+  profile: StaffProfile | null;
+  availability: DoctorAvailabilityDay[];
+  preferences: DoctorNotificationSettings | null;
+  loading: boolean;
+  loadError: string | null;
   serviceAvailability: Record<string, boolean>;
   stockLevels: Record<string, number>;
   activeDays: Record<string, boolean>;
-  notificationSettings: Record<string, boolean>;
-  selectedThread: string;
+  notificationSettings: DoctorNotificationSettings;
+  selectedConversationId: string;
   draft: string;
-  sentMessages: Record<string, string[]>;
   profileName: string;
+  profilePhone: string;
   startTime: string;
   endTime: string;
+  recordFormOpen: boolean;
+  labFormOpen: boolean;
+  conversationFormOpen: boolean;
+  saving: boolean;
+  actionError: string | null;
   notice: string;
 };
 
 type WorkspaceAction =
+  | {
+      type: 'WORKSPACE_LOADED';
+      records: ApiClinicalRecord[];
+      labResults: ApiLabResult[];
+      followUps: StaffFollowUp[];
+      conversations: StaffConversation[];
+      services: ClinicServiceSetting[];
+      inventory: InventoryItem[];
+      orders: StaffOrder[];
+      profile: StaffProfile;
+      availability: DoctorAvailabilityDay[];
+      preferences: DoctorNotificationSettings;
+    }
+  | { type: 'WORKSPACE_FAILED'; message: string }
   | { type: 'SET_QUERY'; value: string }
   | { type: 'SET_FILTER'; key: FilterKey; value: string }
-  | { type: 'MARK_LAB_REVIEWED'; id: string }
-  | { type: 'TOGGLE_SERVICE'; id: string }
-  | { type: 'ADJUST_STOCK'; id: string; amount: number }
   | { type: 'TOGGLE_DAY'; day: string }
-  | { type: 'TOGGLE_SETTING'; key: string }
-  | { type: 'SELECT_THREAD'; owner: string }
+  | { type: 'TOGGLE_SETTING'; key: keyof DoctorNotificationSettings }
+  | { type: 'RECORD_CREATED'; record: ApiClinicalRecord }
+  | { type: 'LAB_CREATED'; labResult: ApiLabResult }
+  | { type: 'LAB_REVIEWED'; labResult: Pick<ApiLabResult, 'id' | 'status' | 'reviewedAt'> }
+  | { type: 'SERVICE_UPDATED'; service: ClinicServiceSetting }
+  | { type: 'INVENTORY_UPDATED'; item: InventoryItem }
+  | { type: 'AVAILABILITY_UPDATED'; days: DoctorAvailabilityDay[] }
+  | { type: 'PREFERENCES_UPDATED'; preferences: DoctorNotificationSettings }
+  | { type: 'PROFILE_UPDATED'; profile: StaffProfile }
+  | { type: 'CONVERSATIONS_UPDATED'; conversations: StaffConversation[] }
+  | { type: 'SET_MESSAGES'; messages: StaffMessage[] }
+  | { type: 'MESSAGE_SENT'; message: StaffMessage }
+  | { type: 'SELECT_CONVERSATION'; id: string }
   | { type: 'SET_DRAFT'; value: string }
-  | { type: 'SEND_MESSAGE' }
   | { type: 'SET_PROFILE_NAME'; value: string }
+  | { type: 'SET_PROFILE_PHONE'; value: string }
   | { type: 'SET_START_TIME'; value: string }
   | { type: 'SET_END_TIME'; value: string }
+  | { type: 'TOGGLE_RECORD_FORM' }
+  | { type: 'TOGGLE_LAB_FORM' }
+  | { type: 'TOGGLE_CONVERSATION_FORM' }
+  | { type: 'SAVING'; value: boolean }
+  | { type: 'ACTION_FAILED'; message: string }
   | { type: 'SET_NOTICE'; value: string };
 
 type ClinicalRecord = {
@@ -82,76 +160,11 @@ type ClinicalRecord = {
   type: string;
   summary: string;
   date: string;
-  status: 'Final' | 'Pending' | 'Profile only';
+  status: 'Final' | 'Profile only';
 };
-
-type LabResult = {
-  id: string;
-  patientId: string;
-  patient: string;
-  owner: string;
-  test: string;
-  date: string;
-  initialStatus: 'Pending' | 'In lab' | 'Ready';
-};
-
-type FollowUp = {
-  patientId: string;
-  patient: string;
-  owner: string;
-  reason: string;
-  lastVisit: string;
-  dueOffset: number;
-};
-
-const RECORDS: ClinicalRecord[] = [
-  { id: 'record-milo-1', patientId: 'milo', patient: 'Milo', owner: 'Maria Santos', type: 'Consultation', summary: 'Annual wellness check; vaccinations are up to date.', date: 'Nov 3, 2026', status: 'Final' },
-  { id: 'record-luna-1', patientId: 'luna', patient: 'Luna', owner: 'Paolo Reyes', type: 'Lab notes', summary: 'Follow-up for skin irritation; continue prescribed treatment.', date: 'Nov 3, 2026', status: 'Pending' },
-  { id: 'record-coco-1', patientId: 'coco', patient: 'Coco', owner: 'Ana Cruz', type: 'Procedure', summary: 'Dental cleaning completed; recheck in six months.', date: 'Oct 19, 2026', status: 'Final' },
-  { id: 'record-bambi-1', patientId: 'bambi', patient: 'Bambi', owner: 'Jose Dela Cruz', type: 'Consultation', summary: 'Healthy appetite and normal activity.', date: 'Sep 14, 2026', status: 'Final' },
-  { id: 'record-milo-2', patientId: 'milo', patient: 'Milo', owner: 'Maria Santos', type: 'Vaccination', summary: 'Rabies booster due; owner advised to schedule.', date: 'Oct 5, 2026', status: 'Final' },
-  { id: 'record-coco-2', patientId: 'coco', patient: 'Coco', owner: 'Ana Cruz', type: 'Consultation', summary: 'Weight stable; monitor skin response to topical care.', date: 'Oct 8, 2026', status: 'Final' },
-  { id: 'record-luna-2', patientId: 'luna', patient: 'Luna', owner: 'Paolo Reyes', type: 'Consultation', summary: 'Blood chemistry ordered for ongoing follow-up.', date: 'Oct 17, 2026', status: 'Pending' },
-];
-
-const LAB_RESULTS: LabResult[] = [
-  { id: 'lab-coco-cbc', patientId: 'coco', patient: 'Coco', owner: 'Ana Cruz', test: 'CBC panel', date: 'Nov 10, 2026', initialStatus: 'In lab' },
-  { id: 'lab-luna-chemistry', patientId: 'luna', patient: 'Luna', owner: 'Paolo Reyes', test: 'Blood chemistry', date: 'Nov 9, 2026', initialStatus: 'Ready' },
-  { id: 'lab-bambi-urinalysis', patientId: 'bambi', patient: 'Bambi', owner: 'Jose Dela Cruz', test: 'Urinalysis', date: 'Nov 8, 2026', initialStatus: 'Pending' },
-];
-
-const FOLLOW_UPS: FollowUp[] = [
-  { patientId: 'coco', patient: 'Coco', owner: 'Ana Cruz', reason: 'Dermatitis recheck', lastVisit: 'Oct 19, 2026', dueOffset: -2 },
-  { patientId: 'luna', patient: 'Luna', owner: 'Paolo Reyes', reason: 'Skin irritation review', lastVisit: 'Nov 3, 2026', dueOffset: -1 },
-  { patientId: 'bambi', patient: 'Bambi', owner: 'Jose Dela Cruz', reason: 'Weight monitoring', lastVisit: 'Sep 14, 2026', dueOffset: 0 },
-  { patientId: 'milo', patient: 'Milo', owner: 'Maria Santos', reason: 'Rabies booster', lastVisit: 'Oct 5, 2026', dueOffset: 2 },
-  { patientId: 'coco', patient: 'Coco', owner: 'Ana Cruz', reason: 'Dental recheck', lastVisit: 'Oct 19, 2026', dueOffset: 6 },
-  { patientId: 'luna', patient: 'Luna', owner: 'Paolo Reyes', reason: 'Treatment progress check', lastVisit: 'Nov 3, 2026', dueOffset: 13 },
-];
-
-const THREADS = [
-  { owner: 'Maria Santos', pet: 'Milo', preview: 'The vaccination card is ready for review.', time: '9:24 AM', unread: 2 },
-  { owner: 'Paolo Reyes', pet: 'Luna', preview: 'Should I continue the prescribed treatment?', time: 'Yesterday', unread: 1 },
-  { owner: 'Ana Cruz', pet: 'Coco', preview: 'Thank you for the care instructions.', time: 'Mon', unread: 0 },
-];
-
-const INITIAL_MESSAGES: Record<string, string[]> = {
-  'Maria Santos': ['Good morning, doctor. Milo is due for his booster.', 'The vaccination card is ready for review.'],
-  'Paolo Reyes': ['Luna’s skin looks better today.', 'Should I continue the prescribed treatment?'],
-  'Ana Cruz': ['Thank you for the care instructions.'],
-};
-
-const ORDERS = [
-  { id: 'MFC-10482', customer: 'Maria Santos', items: 'Premium Dog Food 3kg', total: 1250, payment: 'Paid', status: 'New' },
-  { id: 'MFC-10481', customer: 'Juan Dela Cruz', items: 'Cat Kibble Tuna 2kg', total: 890, payment: 'COD', status: 'New' },
-  { id: 'MFC-10478', customer: 'Ana Reyes', items: 'Wet Food Pack x12, Slicker Brush', total: 940, payment: 'Paid', status: 'Preparing' },
-  { id: 'MFC-10475', customer: 'Carlo Mendoza', items: 'Joint Care Tablets', total: 780, payment: 'Paid', status: 'Preparing' },
-  { id: 'MFC-10470', customer: 'Grace Lim', items: 'Harness & Leash Set', total: 1220, payment: 'COD', status: 'Out for delivery' },
-  { id: 'MFC-10466', customer: 'Paolo Rivera', items: 'Omega-3 Fish Oil', total: 620, payment: 'Paid', status: 'Delivered' },
-  { id: 'MFC-10459', customer: 'Maria Santos', items: 'Ear Cleaner 100ml', total: 290, payment: 'Paid', status: 'Cancelled' },
-];
 
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const WEEKDAY_NUMBERS = [1, 2, 3, 4, 5, 6, 0];
 const ORDER_FILTERS = ['All', 'New', 'Preparing', 'Out for delivery', 'Delivered', 'Cancelled'];
 const RECORD_FILTERS = ['All records', 'Patient profile', 'Consultation', 'Vaccination', 'Procedure', 'Lab notes'];
 const LAB_FILTERS = ['All', 'Pending', 'In lab', 'Ready', 'Reviewed'];
@@ -161,59 +174,119 @@ function createInitialState(): WorkspaceState {
   return {
     query: '',
     filters: { record: 'All records', lab: 'All', 'follow-up': 'All', service: 'All', order: 'All' },
-    reviewedLabs: [],
+    records: [],
+    labResults: [],
+    followUps: [],
+    conversations: [],
+    messages: [],
+    services: [],
+    inventory: [],
+    orders: [],
+    profile: null,
+    availability: [],
+    preferences: null,
+    loading: true,
+    loadError: null,
     serviceAvailability: {},
     stockLevels: {},
-    activeDays: Object.fromEntries(WEEKDAYS.map((day) => [day, day !== 'Sunday'])),
+    activeDays: Object.fromEntries(WEEKDAYS.map((_, index) => [String(index), false])),
     notificationSettings: { appointmentRequests: true, followUpReminders: true, labResults: true, inventoryAlerts: false },
-    selectedThread: 'Maria Santos',
+    selectedConversationId: '',
     draft: '',
-    sentMessages: INITIAL_MESSAGES,
     profileName: '',
+    profilePhone: '',
     startTime: '08:00',
     endTime: '18:00',
+    recordFormOpen: false,
+    labFormOpen: false,
+    conversationFormOpen: false,
+    saving: false,
+    actionError: null,
     notice: '',
   };
 }
 
 function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
   switch (action.type) {
+    case 'WORKSPACE_LOADED':
+      return {
+        ...state,
+        records: action.records,
+        labResults: action.labResults,
+        followUps: action.followUps,
+        conversations: action.conversations,
+        services: action.services,
+        inventory: action.inventory,
+        orders: action.orders,
+        profile: action.profile,
+        availability: action.availability,
+        preferences: action.preferences,
+        selectedConversationId: state.selectedConversationId || action.conversations[0]?.id || '',
+        profileName: action.profile.fullName,
+        profilePhone: action.profile.phone,
+        loading: false,
+        loadError: null,
+        serviceAvailability: Object.fromEntries(action.services.map((service) => [service.serviceId, service.isEnabled])),
+        stockLevels: Object.fromEntries(action.inventory.map((item) => [item.productId, item.quantity])),
+        activeDays: Object.fromEntries(action.availability.map((day) => [String(day.weekday), day.isAvailable])),
+        notificationSettings: action.preferences,
+        startTime: action.availability[0]?.startsAt.slice(0, 5) ?? '08:00',
+        endTime: action.availability[0]?.endsAt.slice(0, 5) ?? '18:00',
+      };
+    case 'WORKSPACE_FAILED':
+      return { ...state, loading: false, loadError: action.message };
     case 'SET_QUERY':
       return { ...state, query: action.value };
     case 'SET_FILTER':
       return { ...state, filters: { ...state.filters, [action.key]: action.value } };
-    case 'MARK_LAB_REVIEWED':
-      return { ...state, reviewedLabs: state.reviewedLabs.includes(action.id) ? state.reviewedLabs : [...state.reviewedLabs, action.id] };
-    case 'TOGGLE_SERVICE':
-      return { ...state, serviceAvailability: { ...state.serviceAvailability, [action.id]: !(state.serviceAvailability[action.id] ?? true) }, notice: 'Service status changed in this preview only.' };
-    case 'ADJUST_STOCK': {
-      const current = state.stockLevels[action.id] ?? 12;
-      return { ...state, stockLevels: { ...state.stockLevels, [action.id]: Math.max(0, current + action.amount) }, notice: 'Inventory count changed in this preview only.' };
-    }
+    case 'RECORD_CREATED':
+      return { ...state, records: [action.record, ...state.records], recordFormOpen: false, saving: false, actionError: null, notice: 'Clinical record saved.' };
+    case 'LAB_CREATED':
+      return { ...state, labResults: [action.labResult, ...state.labResults], labFormOpen: false, saving: false, actionError: null, notice: 'Lab request saved.' };
+    case 'LAB_REVIEWED':
+      return { ...state, labResults: state.labResults.map((item) => item.id === action.labResult.id ? { ...item, ...action.labResult } : item), saving: false, actionError: null, notice: 'Lab result marked reviewed.' };
+    case 'SERVICE_UPDATED':
+      return { ...state, services: state.services.map((item) => item.serviceId === action.service.serviceId ? action.service : item), serviceAvailability: { ...state.serviceAvailability, [action.service.serviceId]: action.service.isEnabled }, saving: false, actionError: null, notice: 'Service availability saved.' };
+    case 'INVENTORY_UPDATED':
+      return { ...state, inventory: [...state.inventory.filter((item) => item.productId !== action.item.productId), action.item], stockLevels: { ...state.stockLevels, [action.item.productId]: action.item.quantity }, saving: false, actionError: null, notice: 'Inventory quantity saved.' };
+    case 'AVAILABILITY_UPDATED':
+      return { ...state, availability: action.days, activeDays: Object.fromEntries(action.days.map((day) => [String(day.weekday), day.isAvailable])), saving: false, actionError: null, notice: 'Availability saved.' };
+    case 'PREFERENCES_UPDATED':
+      return { ...state, preferences: action.preferences, notificationSettings: action.preferences, saving: false, actionError: null, notice: 'Notification preferences saved.' };
+    case 'PROFILE_UPDATED':
+      return { ...state, profile: action.profile, profileName: action.profile.fullName, profilePhone: action.profile.phone, saving: false, actionError: null, notice: 'Profile saved.' };
+    case 'SET_MESSAGES':
+      return { ...state, messages: action.messages };
+    case 'CONVERSATIONS_UPDATED':
+      return { ...state, conversations: action.conversations, conversationFormOpen: false, saving: false, actionError: null };
+    case 'MESSAGE_SENT':
+      return { ...state, messages: [...state.messages, action.message], draft: '', saving: false, actionError: null, notice: 'Message sent.' };
     case 'TOGGLE_DAY':
-      return { ...state, activeDays: { ...state.activeDays, [action.day]: !state.activeDays[action.day] }, notice: 'Availability changed in this preview only.' };
+      return { ...state, activeDays: { ...state.activeDays, [action.day]: !state.activeDays[action.day] } };
     case 'TOGGLE_SETTING':
-      return { ...state, notificationSettings: { ...state.notificationSettings, [action.key]: !state.notificationSettings[action.key] }, notice: 'Preference changed in this preview only.' };
-    case 'SELECT_THREAD':
-      return { ...state, selectedThread: action.owner };
+      return { ...state, notificationSettings: { ...state.notificationSettings, [action.key]: !state.notificationSettings[action.key] } };
+    case 'SELECT_CONVERSATION':
+      return { ...state, selectedConversationId: action.id, messages: [] };
     case 'SET_DRAFT':
       return { ...state, draft: action.value };
-    case 'SEND_MESSAGE': {
-      const message = state.draft.trim();
-      if (!message) return state;
-      return {
-        ...state,
-        draft: '',
-        sentMessages: { ...state.sentMessages, [state.selectedThread]: [...(state.sentMessages[state.selectedThread] ?? []), message] },
-        notice: 'Message added to this preview only; it was not delivered.',
-      };
-    }
     case 'SET_PROFILE_NAME':
       return { ...state, profileName: action.value };
+    case 'SET_PROFILE_PHONE':
+      return { ...state, profilePhone: action.value };
     case 'SET_START_TIME':
       return { ...state, startTime: action.value };
     case 'SET_END_TIME':
       return { ...state, endTime: action.value };
+    case 'TOGGLE_RECORD_FORM':
+      return { ...state, recordFormOpen: !state.recordFormOpen, actionError: null };
+    case 'TOGGLE_LAB_FORM':
+      return { ...state, labFormOpen: !state.labFormOpen, actionError: null };
+    case 'TOGGLE_CONVERSATION_FORM':
+      return { ...state, conversationFormOpen: !state.conversationFormOpen, actionError: null };
+    case 'SAVING':
+      return { ...state, saving: action.value, actionError: null };
+    case 'ACTION_FAILED':
+      return { ...state, saving: false, actionError: action.message };
     case 'SET_NOTICE':
       return { ...state, notice: action.value };
     default:
@@ -223,12 +296,6 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
 
 function formatPeso(value: number): string {
   return `₱${Math.round(value).toLocaleString('en-PH')}`;
-}
-
-function dueDate(offset: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + offset);
-  return date.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function exportCsv(filename: string, rows: string[][]): void {
@@ -247,10 +314,6 @@ function PageHeader({ eyebrow, title, description, children }: { eyebrow: string
       {children && <div className={styles.headerActions}>{children}</div>}
     </header>
   );
-}
-
-function PreviewNotice() {
-  return <p className={styles.previewNotice} role="note">Preview data only. This section is not connected to the clinic database yet.</p>;
 }
 
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
@@ -282,11 +345,67 @@ export function DoctorWorkspacePages({
   onOpenPatient: (id: string) => void;
 }) {
   const [state, dispatch] = useReducer(workspaceReducer, undefined, createInitialState);
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      getStaffClinicalRecords(),
+      getStaffLabResults(),
+      getStaffFollowUps(),
+      getStaffConversations(),
+      getStaffServices(),
+      getStaffInventory(),
+      getStaffOrders(),
+      getStaffProfile(),
+      getStaffAvailability(),
+      getStaffPreferences(),
+    ]).then(([records, labs, followUps, conversations, services, inventory, orders, profile, availability, preferences]) => {
+      if (!active) return;
+      dispatch({
+        type: 'WORKSPACE_LOADED',
+        records: records.records,
+        labResults: labs.labResults,
+        followUps: followUps.followUps,
+        conversations: conversations.conversations,
+        services: services.services,
+        inventory: inventory.inventory,
+        orders: orders.orders,
+        profile: profile.profile,
+        availability: availability.availability,
+        preferences: preferences.preferences.notificationSettings,
+      });
+    }).catch((error: unknown) => {
+      if (!active) return;
+      dispatch({
+        type: 'WORKSPACE_FAILED',
+        message: error instanceof Error ? error.message : 'Could not load doctor workspace data.',
+      });
+    });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (!state.selectedConversationId) return;
+    let active = true;
+    getStaffConversationMessages(state.selectedConversationId).then(({ messages }) => {
+      if (active) dispatch({ type: 'SET_MESSAGES', messages });
+    }).catch((error: unknown) => {
+      if (active) dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not load this conversation.' });
+    });
+    return () => { active = false; };
+  }, [state.selectedConversationId]);
   const query = state.query.trim().toLowerCase();
   const allRecords = useMemo(() => [
-    ...RECORDS,
+    ...state.records.map((record) => ({
+      id: record.id,
+      patientId: record.petId,
+      patient: record.petName,
+      owner: record.ownerName,
+      type: record.recordType,
+      summary: record.summary,
+      date: new Date(record.createdAt).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }),
+      status: 'Final' as const,
+    })),
     ...patients
-      .filter((patient) => !RECORDS.some((record) => record.patientId === patient.id))
+      .filter((patient) => !state.records.some((record) => record.petId === patient.id))
       .map((patient): ClinicalRecord => ({
         id: `profile-${patient.id}`,
         patientId: patient.id,
@@ -297,36 +416,181 @@ export function DoctorWorkspacePages({
         date: patient.lastVisit,
         status: 'Profile only',
       })),
-  ], [patients]);
+  ], [patients, state.records]);
   const filteredRecords = useMemo(() => allRecords.filter((record) => {
     const matchesText = `${record.patient} ${record.owner} ${record.type} ${record.summary}`.toLowerCase().includes(query);
     const matchesType = state.filters.record === 'All records' || record.type === state.filters.record;
     return matchesText && matchesType;
   }), [allRecords, query, state.filters.record]);
-  const labRows = useMemo(() => LAB_RESULTS.map((result) => ({
+  const labRows = useMemo(() => state.labResults.map((result) => ({
     ...result,
-    status: state.reviewedLabs.includes(result.id) ? 'Reviewed' : result.initialStatus,
+    patient: result.petName,
+    owner: result.ownerName,
+    test: result.testName,
+    date: new Date(result.requestedAt).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }),
+    displayStatus: result.status === 'in_lab' ? 'In lab' : result.status === 'ready' ? 'Ready' : result.status === 'reviewed' ? 'Reviewed' : 'Pending',
   })).filter((result) => {
     const matchesText = `${result.patient} ${result.owner} ${result.test}`.toLowerCase().includes(query);
-    const matchesStatus = state.filters.lab === 'All' || result.status === state.filters.lab;
+    const matchesStatus = state.filters.lab === 'All' || result.displayStatus === state.filters.lab;
     return matchesText && matchesStatus;
-  }), [query, state.filters.lab, state.reviewedLabs]);
-  const followUpRows = useMemo(() => FOLLOW_UPS.map((item) => ({
+  }), [query, state.filters.lab, state.labResults]);
+  const followUpRows = useMemo(() => state.followUps.map((item) => ({
     ...item,
-    due: dueDate(item.dueOffset),
-    status: item.dueOffset < 0 ? 'Overdue' : item.dueOffset <= 2 ? 'Due soon' : 'Scheduled',
+    patient: item.petName,
+    owner: item.ownerName,
+    reason: item.summary,
+    lastVisit: 'Clinical record follow-up',
+    due: new Date(`${item.followUpAt.slice(0, 10)}T12:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }),
+    status: item.followUpAt.slice(0, 10) < new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
+      ? 'Overdue'
+      : item.followUpAt.slice(0, 10) <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) ? 'Due soon' : 'Scheduled',
   })).filter((item) => {
     const matchesText = `${item.patient} ${item.owner} ${item.reason}`.toLowerCase().includes(query);
     const matchesStatus = state.filters['follow-up'] === 'All' || item.status === state.filters['follow-up'];
     return matchesText && matchesStatus;
-  }), [query, state.filters]);
+  }), [query, state.filters, state.followUps]);
   const visibleServices = SERVICES.filter((service) => `${service.name} ${service.blurb} ${service.category}`.toLowerCase().includes(query)
     && (state.filters.service === 'All' || service.category === state.filters.service));
   const visibleProducts = PRODUCTS.filter((product) => `${product.name} ${product.category}`.toLowerCase().includes(query));
-  const visibleOrders = ORDERS.filter((order) => `${order.id} ${order.customer} ${order.items}`.toLowerCase().includes(query)
-    && (state.filters.order === 'All' || order.status === state.filters.order));
+  const visibleOrders = state.orders.filter((order) => `${order.id} ${order.customerName} ${order.items.map((item) => item.productName).join(' ')}`.toLowerCase().includes(query)
+    && (state.filters.order === 'All' || order.status.replaceAll('_', ' ') === state.filters.order.toLowerCase()));
+  const conversations = state.conversations.filter((conversation) => `${conversation.ownerName} ${conversation.petName} ${conversation.latestMessage ?? ''}`.toLowerCase().includes(query));
+  const selectedConversation = state.conversations.find((conversation) => conversation.id === state.selectedConversationId);
 
   const saveNotice = (message: string) => dispatch({ type: 'SET_NOTICE', value: message });
+  const submitRecord = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const petId = String(formData.get('petId') ?? '');
+    const recordType = String(formData.get('recordType') ?? '').trim();
+    const summary = String(formData.get('summary') ?? '').trim();
+    if (!petId || !recordType || !summary) return;
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { record } = await createStaffClinicalRecord({
+        petId,
+        recordType,
+        summary,
+        diagnosis: String(formData.get('diagnosis') ?? '').trim(),
+        treatment: String(formData.get('treatment') ?? '').trim(),
+        followUpAt: String(formData.get('followUpAt') ?? '') || null,
+      });
+      dispatch({ type: 'RECORD_CREATED', record });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not save this clinical record.' });
+    }
+  };
+  const submitLab = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const petId = String(formData.get('petId') ?? '');
+    const testName = String(formData.get('testName') ?? '').trim();
+    if (!petId || !testName) return;
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { labResult } = await createStaffLabResult({ petId, testName });
+      dispatch({ type: 'LAB_CREATED', labResult });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not save this lab request.' });
+    }
+  };
+  const markLabReviewed = async (id: string) => {
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { labResult } = await reviewStaffLabResult(id);
+      dispatch({ type: 'LAB_REVIEWED', labResult });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not mark the result reviewed.' });
+    }
+  };
+  const toggleService = async (serviceId: string) => {
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { service } = await setStaffServiceEnabled(serviceId, !(state.serviceAvailability[serviceId] ?? true));
+      dispatch({ type: 'SERVICE_UPDATED', service });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not update this service.' });
+    }
+  };
+  const adjustStock = async (productId: string, amount: number) => {
+    const quantity = Math.max(0, (state.stockLevels[productId] ?? 0) + amount);
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { item } = await setStaffInventoryQuantity(productId, quantity);
+      dispatch({ type: 'INVENTORY_UPDATED', item });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not save this inventory quantity.' });
+    }
+  };
+  const saveAvailability = async () => {
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { availability } = await saveStaffAvailability(WEEKDAYS.map((_, index) => ({
+        weekday: WEEKDAY_NUMBERS[index] ?? 0,
+        isAvailable: state.activeDays[String(WEEKDAY_NUMBERS[index] ?? 0)] ?? false,
+        startsAt: state.startTime,
+        endsAt: state.endTime,
+      })));
+      dispatch({ type: 'AVAILABILITY_UPDATED', days: availability });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not save availability.' });
+    }
+  };
+  const savePreferences = async () => {
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { preferences } = await saveStaffPreferences(state.notificationSettings);
+      dispatch({ type: 'PREFERENCES_UPDATED', preferences: preferences.notificationSettings });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not save preferences.' });
+    }
+  };
+  const saveProfile = async () => {
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { profile } = await updateStaffProfile({ fullName: state.profileName, phone: state.profilePhone });
+      dispatch({ type: 'PROFILE_UPDATED', profile });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not save your profile.' });
+    }
+  };
+  const selectConversation = async (id: string) => {
+    dispatch({ type: 'SELECT_CONVERSATION', id });
+    try {
+      const { messages } = await getStaffConversationMessages(id);
+      dispatch({ type: 'SET_MESSAGES', messages });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not load this conversation.' });
+    }
+  };
+  const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!state.selectedConversationId || !state.draft.trim()) return;
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { message } = await sendStaffMessage(state.selectedConversationId, state.draft.trim());
+      dispatch({ type: 'MESSAGE_SENT', message });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not send this message.' });
+    }
+  };
+  const startConversation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const petId = String(formData.get('petId') ?? '');
+    const body = String(formData.get('body') ?? '').trim();
+    if (!petId || !body) return;
+    dispatch({ type: 'SAVING', value: true });
+    try {
+      const { conversationId, message } = await startStaffConversation({ petId, body });
+      const { conversations } = await getStaffConversations();
+      dispatch({ type: 'CONVERSATIONS_UPDATED', conversations });
+      dispatch({ type: 'SELECT_CONVERSATION', id: conversationId });
+      dispatch({ type: 'SET_MESSAGES', messages: [message] });
+    } catch (error) {
+      dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not start this conversation.' });
+    }
+  };
   const title: { eyebrow: string; title: string; description: string } = {
     records: { eyebrow: 'CLINICAL RECORDS', title: 'Clinical records', description: 'Consultation notes, diagnoses and treatment plans across your patients.' },
     labs: { eyebrow: 'LAB RESULTS', title: 'Laboratory results', description: 'Track requested tests and review completed results.' },
@@ -343,20 +607,32 @@ export function DoctorWorkspacePages({
   return (
     <section className={styles.page}>
       <PageHeader eyebrow={title.eyebrow} title={title.title} description={title.description}>
-        {view === 'records' && <button type="button" className={styles.secondaryButton} onClick={() => exportCsv('clinical-records-preview.csv', [['Patient', 'Owner', 'Record type', 'Summary', 'Date', 'Status'], ...filteredRecords.map((record) => [record.patient, record.owner, record.type, record.summary, record.date, record.status])])}>Export</button>}
+        {view === 'records' && <><button type="button" className={styles.secondaryButton} onClick={() => exportCsv('clinical-records.csv', [['Patient', 'Owner', 'Record type', 'Summary', 'Date', 'Status'], ...filteredRecords.map((record) => [record.patient, record.owner, record.type, record.summary, record.date, record.status])])}>Export</button><button type="button" className={styles.primaryButton} onClick={() => dispatch({ type: 'TOGGLE_RECORD_FORM' })}>＋ Add record</button></>}
+        {view === 'labs' && <button type="button" className={styles.primaryButton} onClick={() => dispatch({ type: 'TOGGLE_LAB_FORM' })}>＋ Request test</button>}
         {view === 'follow-ups' && <button type="button" className={styles.primaryButton} onClick={() => onNavigate('calendar')}><Icon name="nav-calendar" size={17} />Schedule follow-up</button>}
-        {view === 'orders' && <button type="button" className={styles.secondaryButton} onClick={() => exportCsv('orders-preview.csv', [['Order', 'Customer', 'Items', 'Total', 'Payment', 'Status'], ...visibleOrders.map((order) => [order.id, order.customer, order.items, String(order.total), order.payment, order.status])])}>Export</button>}
+        {view === 'orders' && <button type="button" className={styles.secondaryButton} onClick={() => exportCsv('orders.csv', [['Order', 'Customer', 'Items', 'Total', 'Payment', 'Status'], ...visibleOrders.map((order) => [order.id, order.customerName, order.items.map((item) => `${item.quantity} × ${item.productName}`).join('; '), order.totalAmount, order.paymentMethod, order.status])])}>Export</button>}
       </PageHeader>
-      <PreviewNotice />
+      {state.loading && <p className={styles.muted} role="status">Loading clinic data…</p>}
+      {state.loadError && <p className={styles.error} role="alert">{state.loadError}<button type="button" onClick={() => window.location.reload()}>Reload</button></p>}
+      {state.actionError && <p className={styles.error} role="alert">{state.actionError}</p>}
       {state.notice && <div className={styles.notice} role="status">{state.notice}<button type="button" aria-label="Dismiss message" onClick={() => saveNotice('')}>×</button></div>}
 
       {view === 'records' && <>
         <div className={styles.metrics}>
-          <article><span>Records and profiles</span><b>{allRecords.length}</b><small>Across {patients.length} patient profiles</small></article>
-          <article><span>Created this month</span><b>{allRecords.filter((record) => record.date.startsWith('Nov')).length}</b><small>Preview entries</small></article>
-          <article><span>Awaiting sign-off</span><b>{allRecords.filter((record) => record.status === 'Pending').length}</b><small>Needs your review</small></article>
-          <article><span>Patient profiles</span><b>{patients.length}</b><small>In the local directory</small></article>
+          <article><span>Records and profiles</span><b>{allRecords.length}</b><small>Across {patients.length} assigned patients</small></article>
+          <article><span>Created this month</span><b>{state.records.filter((record) => new Date(record.createdAt).getMonth() === new Date().getMonth()).length}</b><small>Saved clinical notes</small></article>
+          <article><span>Follow-ups scheduled</span><b>{state.records.filter((record) => record.followUpAt).length}</b><small>Linked to clinical records</small></article>
+          <article><span>Patient profiles</span><b>{patients.length}</b><small>From the clinic database</small></article>
         </div>
+        {state.recordFormOpen && <form className={styles.dataForm} onSubmit={(event) => void submitRecord(event)}>
+          <label>Patient<select name="petId" required defaultValue=""><option value="" disabled>Choose a patient</option>{patients.map((patient) => <option value={patient.id} key={patient.id}>{patient.name} · {patient.owner}</option>)}</select></label>
+          <label>Record type<select name="recordType" defaultValue="Consultation"><option>Consultation</option><option>Vaccination</option><option>Procedure</option><option>Lab notes</option><option>Medication</option></select></label>
+          <label className={styles.wideField}>Summary<textarea name="summary" required maxLength={3000} rows={3} /></label>
+          <label>Diagnosis<input name="diagnosis" maxLength={2000} /></label>
+          <label>Treatment<input name="treatment" maxLength={3000} /></label>
+          <label>Follow-up date<input name="followUpAt" type="date" /></label>
+          <div className={styles.formActions}><button type="button" className={styles.secondaryButton} onClick={() => dispatch({ type: 'TOGGLE_RECORD_FORM' })}>Cancel</button><button type="submit" className={styles.primaryButton} disabled={state.saving}>{state.saving ? 'Saving…' : 'Save clinical record'}</button></div>
+        </form>}
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search by pet, owner or diagnosis..." /></div>
         <FilterButtons values={RECORD_FILTERS} selected={state.filters.record} onSelect={(value) => dispatch({ type: 'SET_FILTER', key: 'record', value })} />
         <div className={styles.tableWrap}><table className={styles.table}>
@@ -371,36 +647,41 @@ export function DoctorWorkspacePages({
 
       {view === 'labs' && <>
         <div className={styles.metrics}>
-          <article><span>Tests in this preview</span><b>{LAB_RESULTS.length}</b><small>Across patient files</small></article>
-          <article><span>Awaiting results</span><b>{LAB_RESULTS.filter((item) => item.initialStatus !== 'Ready').length}</b><small>Pending or in lab</small></article>
-          <article><span>Ready to review</span><b>{LAB_RESULTS.filter((item) => item.initialStatus === 'Ready').length}</b><small>Doctor sign-off</small></article>
-          <article><span>Reviewed</span><b>{state.reviewedLabs.length}</b><small>In this browser session</small></article>
+          <article><span>Tests in database</span><b>{state.labResults.length}</b><small>Across assigned patients</small></article>
+          <article><span>Awaiting results</span><b>{state.labResults.filter((item) => item.status === 'pending' || item.status === 'in_lab').length}</b><small>Pending or in lab</small></article>
+          <article><span>Ready to review</span><b>{state.labResults.filter((item) => item.status === 'ready').length}</b><small>Doctor sign-off</small></article>
+          <article><span>Reviewed</span><b>{state.labResults.filter((item) => item.status === 'reviewed').length}</b><small>Saved review status</small></article>
         </div>
+        {state.labFormOpen && <form className={styles.dataForm} onSubmit={(event) => void submitLab(event)}>
+          <label>Patient<select name="petId" required defaultValue=""><option value="" disabled>Choose a patient</option>{patients.map((patient) => <option value={patient.id} key={patient.id}>{patient.name} · {patient.owner}</option>)}</select></label>
+          <label>Test name<input name="testName" required maxLength={120} placeholder="e.g. CBC panel" /></label>
+          <div className={styles.formActions}><button type="button" className={styles.secondaryButton} onClick={() => dispatch({ type: 'TOGGLE_LAB_FORM' })}>Cancel</button><button type="submit" className={styles.primaryButton} disabled={state.saving}>{state.saving ? 'Saving…' : 'Create lab request'}</button></div>
+        </form>}
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search patient or test..." /></div>
         <FilterButtons values={LAB_FILTERS} selected={state.filters.lab} onSelect={(value) => dispatch({ type: 'SET_FILTER', key: 'lab', value })} />
         <div className={styles.tableWrap}><table className={styles.table}>
           <thead><tr><th>Patient</th><th>Test</th><th>Requested</th><th>Status</th><th>Action</th></tr></thead>
           <tbody>{labRows.map((result) => <tr key={result.id}>
-            <td><button type="button" className={styles.patientLink} onClick={() => onOpenPatient(result.patientId)}><b>{result.patient}</b><small>{result.owner}</small></button></td>
-            <td>{result.test}</td><td>{result.date}</td><td><Status>{result.status}</Status></td>
-            <td>{result.status === 'Ready' ? <button type="button" className={styles.textButton} onClick={() => dispatch({ type: 'MARK_LAB_REVIEWED', id: result.id })}>Mark reviewed</button> : <span className={styles.muted}>No result yet</span>}</td>
+            <td><button type="button" className={styles.patientLink} onClick={() => onOpenPatient(result.petId)}><b>{result.patient}</b><small>{result.owner}</small></button></td>
+            <td>{result.test}</td><td>{result.date}</td><td><Status>{result.displayStatus}</Status></td>
+            <td>{result.displayStatus === 'Ready' ? <button type="button" className={styles.textButton} disabled={state.saving} onClick={() => void markLabReviewed(result.id)}>Mark reviewed</button> : <span className={styles.muted}>{result.displayStatus === 'Reviewed' ? 'Reviewed' : 'Awaiting result'}</span>}</td>
           </tr>)}{labRows.length === 0 && <tr><td colSpan={5} className={styles.empty}>No lab results match this filter.</td></tr>}</tbody>
         </table></div>
       </>}
 
       {view === 'follow-ups' && <>
         <div className={styles.metrics}>
-          <article><span>Open follow-ups</span><b>{FOLLOW_UPS.length}</b><small>Across {new Set(FOLLOW_UPS.map((item) => item.patientId)).size} patients</small></article>
-          <article><span>Overdue</span><b>{FOLLOW_UPS.filter((item) => item.dueOffset < 0).length}</b><small>Needs action now</small></article>
-          <article><span>Due this week</span><b>{FOLLOW_UPS.filter((item) => item.dueOffset >= 0 && item.dueOffset <= 6).length}</b><small>Next 7 days</small></article>
+          <article><span>Open follow-ups</span><b>{followUpRows.length}</b><small>Saved clinical plans</small></article>
+          <article><span>Overdue</span><b>{state.followUps.filter((item) => item.followUpAt.slice(0, 10) < new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())).length}</b><small>Needs action now</small></article>
+          <article><span>Due soon</span><b>{state.followUps.filter((item) => item.followUpAt.slice(0, 10) >= new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date()) && item.followUpAt.slice(0, 10) <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)).length}</b><small>Next 7 days</small></article>
           <article><span>Appointments loaded</span><b>{appointments.length}</b><small>From the clinic schedule</small></article>
         </div>
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search by pet or owner..." /></div>
         <FilterButtons values={FOLLOW_UP_FILTERS} selected={state.filters['follow-up']} onSelect={(value) => dispatch({ type: 'SET_FILTER', key: 'follow-up', value })} />
         <div className={styles.tableWrap}><table className={styles.table}>
           <thead><tr><th>Patient</th><th>Reason for follow-up</th><th>Last visit</th><th>Due date</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>{followUpRows.map((item, index) => <tr key={`${item.patientId}-${item.reason}-${index}`}>
-            <td><button type="button" className={styles.patientLink} onClick={() => onOpenPatient(item.patientId)}><b>{item.patient}</b><small>{item.owner}</small></button></td>
+          <tbody>{followUpRows.map((item) => <tr key={item.id}>
+            <td><button type="button" className={styles.patientLink} onClick={() => onOpenPatient(item.petId)}><b>{item.patient}</b><small>{item.owner}</small></button></td>
             <td>{item.reason}</td><td>{item.lastVisit}</td><td><b>{item.due}</b></td><td><Status>{item.status}</Status></td>
             <td><div className={styles.rowActions}><button type="button" className={styles.softButton} onClick={() => onNavigate('calendar')}>Schedule</button><button type="button" className={styles.textButton} onClick={() => onNavigate('appointments')}>Appointments</button></div></td>
           </tr>)}{followUpRows.length === 0 && <tr><td colSpan={6} className={styles.empty}>No follow-ups match this filter.</td></tr>}</tbody>
@@ -409,18 +690,25 @@ export function DoctorWorkspacePages({
 
       {view === 'inbox' && <div className={styles.inbox}>
         <aside className={styles.threads}>
-          <div className={styles.sectionHeading}><div><h2>Conversations</h2><p>{THREADS.length} preview threads</p></div></div>
+          <div className={styles.sectionHeading}><div><h2>Conversations</h2><p>{state.conversations.length} saved threads</p></div><button type="button" className={styles.textButton} onClick={() => dispatch({ type: 'TOGGLE_CONVERSATION_FORM' })}>＋ New</button></div>
           <SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search conversations..." />
-          {THREADS.filter((thread) => `${thread.owner} ${thread.pet} ${thread.preview}`.toLowerCase().includes(query)).map((thread) => <button type="button" className={`${styles.thread} ${state.selectedThread === thread.owner ? styles.threadActive : ''}`} key={thread.owner} onClick={() => dispatch({ type: 'SELECT_THREAD', owner: thread.owner })}>
-            <span className={styles.threadAvatar}>{thread.owner.split(' ').map((part) => part[0]).join('')}</span><span className={styles.threadCopy}><b>{thread.owner} · {thread.pet}</b><small>{thread.preview}</small></span><small>{thread.time}</small>{thread.unread > 0 && <i>{thread.unread}</i>}
+          {state.conversationFormOpen && <form className={styles.newConversation} onSubmit={(event) => void startConversation(event)}>
+            <label>Patient<select name="petId" required defaultValue=""><option value="" disabled>Choose an assigned patient</option>{patients.map((patient) => <option value={patient.id} key={patient.id}>{patient.name} · {patient.owner}</option>)}</select></label>
+            <textarea name="body" required maxLength={2000} placeholder="Write your message..." />
+            <button type="submit" className={styles.primaryButton} disabled={state.saving}>{state.saving ? 'Sending…' : 'Start conversation'}</button>
+          </form>}
+          {conversations.map((conversation) => <button type="button" className={`${styles.thread} ${state.selectedConversationId === conversation.id ? styles.threadActive : ''}`} key={conversation.id} onClick={() => void selectConversation(conversation.id)}>
+            <span className={styles.threadAvatar}>{conversation.ownerName.split(' ').map((part) => part[0]).join('')}</span><span className={styles.threadCopy}><b>{conversation.ownerName} · {conversation.petName}</b><small>{conversation.latestMessage ?? 'No messages yet'}</small></span><small>{conversation.latestMessageAt ? new Date(conversation.latestMessageAt).toLocaleDateString() : ''}</small>{conversation.unreadCount > 0 && <i>{conversation.unreadCount}</i>}
           </button>)}
         </aside>
         <section className={styles.conversation}>
-          <header className={styles.conversationHeader}><span className={styles.threadAvatar}>{state.selectedThread.split(' ').map((part) => part[0]).join('')}</span><div><b>{state.selectedThread}</b><small>Pet owner · preview conversation</small></div></header>
-          <div className={styles.messages}>{(state.sentMessages[state.selectedThread] ?? []).map((message, index) => <p className={index === (state.sentMessages[state.selectedThread]?.length ?? 0) - 1 && index >= (INITIAL_MESSAGES[state.selectedThread]?.length ?? 0) ? styles.outgoing : styles.incoming} key={`${state.selectedThread}-${index}`}>{message}</p>)}</div>
-          <form className={styles.composer} onSubmit={(event) => { event.preventDefault(); dispatch({ type: 'SEND_MESSAGE' }); }}>
+          {selectedConversation ? <>
+            <header className={styles.conversationHeader}><span className={styles.threadAvatar}>{selectedConversation.ownerName.split(' ').map((part) => part[0]).join('')}</span><div><b>{selectedConversation.ownerName}</b><small>Pet owner · {selectedConversation.petName}</small></div></header>
+            <div className={styles.messages}>{state.messages.map((message) => <p className={message.senderId === state.profile?.id ? styles.outgoing : styles.incoming} key={message.id}>{message.body}</p>)}</div>
+          </> : <p className={styles.empty}>Select a conversation or start a new one.</p>}
+          <form className={styles.composer} onSubmit={(event) => void sendMessage(event)}>
             <textarea value={state.draft} onChange={(event) => dispatch({ type: 'SET_DRAFT', value: event.target.value })} placeholder="Write a message..." aria-label="Write a message" />
-            <button type="submit" className={styles.primaryButton} disabled={!state.draft.trim()}>Send</button>
+            <button type="submit" className={styles.primaryButton} disabled={!state.selectedConversationId || !state.draft.trim() || state.saving}>{state.saving ? 'Sending…' : 'Send'}</button>
           </form>
         </section>
       </div>}
@@ -440,7 +728,7 @@ export function DoctorWorkspacePages({
             <div className={styles.serviceTop}><span className={styles.serviceEmoji}>{service.emoji}</span><Status>{isAvailable ? 'Available' : 'Paused'}</Status></div>
             <h2>{service.name}</h2><p>{service.blurb}</p>
             <div className={styles.serviceMeta}><b>{formatPeso(service.price)}</b><span>{service.duration}</span></div>
-            <button type="button" className={styles.softButton} onClick={() => dispatch({ type: 'TOGGLE_SERVICE', id: service.id })}>{isAvailable ? 'Pause booking' : 'Resume booking'}</button>
+            <button type="button" className={styles.softButton} disabled={state.saving} onClick={() => void toggleService(service.id)}>{isAvailable ? 'Pause booking' : 'Resume booking'}</button>
           </article>;
         })}{visibleServices.length === 0 && <p className={styles.empty}>No services match this search.</p>}</div>
       </>}
@@ -448,19 +736,19 @@ export function DoctorWorkspacePages({
       {view === 'inventory' && <>
         <div className={styles.metrics}>
           <article><span>Products listed</span><b>{PRODUCTS.length}</b><small>Shop catalog</small></article>
-          <article><span>Low stock</span><b>{PRODUCTS.filter((product) => (state.stockLevels[product.id] ?? 12) < 5).length}</b><small>Below 5 units</small></article>
-          <article><span>Out of stock</span><b>{PRODUCTS.filter((product) => (state.stockLevels[product.id] ?? 12) === 0).length}</b><small>Needs replenishment</small></article>
-          <article><span>Preview inventory value</span><b>{formatPeso(PRODUCTS.reduce((total, product) => total + product.price * (state.stockLevels[product.id] ?? 12), 0))}</b><small>Estimated catalog value</small></article>
+          <article><span>Low stock</span><b>{Object.values(state.stockLevels).filter((quantity) => quantity < 5).length}</b><small>Below 5 units</small></article>
+          <article><span>Out of stock</span><b>{PRODUCTS.filter((product) => state.stockLevels[product.id] === 0).length}</b><small>Needs replenishment</small></article>
+          <article><span>Tracked products</span><b>{state.inventory.length}</b><small>Stock saved in database</small></article>
         </div>
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search products..." /></div>
         <div className={styles.tableWrap}><table className={styles.table}>
-          <thead><tr><th>Product</th><th>Category</th><th>Unit price</th><th>Stock</th><th>Level</th><th>Adjust preview</th></tr></thead>
+          <thead><tr><th>Product</th><th>Category</th><th>Unit price</th><th>Stock</th><th>Level</th><th>Adjust</th></tr></thead>
           <tbody>{visibleProducts.map((product: Product) => {
-            const quantity = state.stockLevels[product.id] ?? 12;
-            const level = quantity === 0 ? 'Out of stock' : quantity < 5 ? 'Low stock' : 'In stock';
+            const quantity = state.stockLevels[product.id];
+            const level = quantity === undefined ? 'Not tracked' : quantity === 0 ? 'Out of stock' : quantity < 5 ? 'Low stock' : 'In stock';
             return <tr key={product.id}>
-              <td><span className={styles.productCell}><span className={styles.serviceEmoji}>{product.emoji}</span><b>{product.name}</b></span></td><td>{product.category}</td><td>{formatPeso(product.price)}</td><td><b>{quantity}</b></td><td><Status>{level}</Status></td>
-              <td><div className={styles.stepper}><button type="button" aria-label={`Decrease ${product.name} stock`} onClick={() => dispatch({ type: 'ADJUST_STOCK', id: product.id, amount: -1 })}>−</button><button type="button" aria-label={`Increase ${product.name} stock`} onClick={() => dispatch({ type: 'ADJUST_STOCK', id: product.id, amount: 1 })}>+</button></div></td>
+              <td><span className={styles.productCell}><span className={styles.serviceEmoji}>{product.emoji}</span><b>{product.name}</b></span></td><td>{product.category}</td><td>{formatPeso(product.price)}</td><td><b>{quantity ?? '—'}</b></td><td><Status>{level}</Status></td>
+              <td><div className={styles.stepper}><button type="button" aria-label={`Decrease ${product.name} stock`} disabled={quantity === undefined || state.saving} onClick={() => void adjustStock(product.id, -1)}>−</button><button type="button" aria-label={`Increase ${product.name} stock`} disabled={state.saving} onClick={() => void adjustStock(product.id, 1)}>+</button></div></td>
             </tr>;
           })}{visibleProducts.length === 0 && <tr><td colSpan={6} className={styles.empty}>No products match this search.</td></tr>}</tbody>
         </table></div>
@@ -468,16 +756,16 @@ export function DoctorWorkspacePages({
 
       {view === 'orders' && <>
         <div className={styles.metrics}>
-          <article><span>Orders in this preview</span><b>{ORDERS.length}</b><small>Across all statuses</small></article>
-          <article><span>New</span><b>{ORDERS.filter((order) => order.status === 'New').length}</b><small>Awaiting confirmation</small></article>
-          <article><span>Preparing</span><b>{ORDERS.filter((order) => order.status === 'Preparing').length}</b><small>Being packed</small></article>
-          <article><span>Delivered</span><b>{ORDERS.filter((order) => order.status === 'Delivered').length}</b><small>Preview orders</small></article>
+          <article><span>Orders</span><b>{state.orders.length}</b><small>Saved orders</small></article>
+          <article><span>New</span><b>{state.orders.filter((order) => order.status === 'new').length}</b><small>Awaiting confirmation</small></article>
+          <article><span>Preparing</span><b>{state.orders.filter((order) => order.status === 'preparing').length}</b><small>Being packed</small></article>
+          <article><span>Delivered</span><b>{state.orders.filter((order) => order.status === 'delivered').length}</b><small>Completed orders</small></article>
         </div>
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search by order number or customer..." /></div>
         <FilterButtons values={ORDER_FILTERS} selected={state.filters.order} onSelect={(value) => dispatch({ type: 'SET_FILTER', key: 'order', value })} />
         <div className={styles.tableWrap}><table className={styles.table}>
           <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead>
-          <tbody>{visibleOrders.map((order) => <tr key={order.id}><td><b>#{order.id}</b></td><td>{order.customer}</td><td className={styles.summaryCell}>{order.items}</td><td><b>{formatPeso(order.total)}</b></td><td>{order.payment}</td><td><Status>{order.status}</Status></td></tr>)}{visibleOrders.length === 0 && <tr><td colSpan={6} className={styles.empty}>No orders match this filter.</td></tr>}</tbody>
+          <tbody>{visibleOrders.map((order) => <tr key={order.id}><td><b>#{order.id}</b></td><td>{order.customerName}</td><td className={styles.summaryCell}>{order.items.map((item) => `${item.quantity} × ${item.productName}`).join(', ')}</td><td><b>{formatPeso(Number(order.totalAmount))}</b></td><td>{order.paymentMethod}</td><td><Status>{order.status.replaceAll('_', ' ')}</Status></td></tr>)}{visibleOrders.length === 0 && <tr><td colSpan={6} className={styles.empty}>No saved orders match this filter.</td></tr>}</tbody>
         </table></div>
       </>}
 
@@ -485,21 +773,23 @@ export function DoctorWorkspacePages({
         <article className={styles.profileCard}>
           <div className={styles.profileIdentity}><span className={styles.profileAvatar}>{doctorName.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><div><h2>{doctorName}</h2><p>Veterinarian</p></div></div>
           <label className={styles.fieldLabel}>Display name<input value={state.profileName || doctorName} onChange={(event) => dispatch({ type: 'SET_PROFILE_NAME', value: event.target.value })} /></label>
-          <label className={styles.fieldLabel}>Specialization<input value="Managed by clinic administrator" readOnly /></label>
+          <label className={styles.fieldLabel}>Phone<input value={state.profilePhone} onChange={(event) => dispatch({ type: 'SET_PROFILE_PHONE', value: event.target.value })} /></label>
+          <label className={styles.fieldLabel}>Email<input value={state.profile?.email ?? ''} readOnly /></label>
+          <label className={styles.fieldLabel}>Specialization<input value={state.profile?.specialization ?? 'Not provided'} readOnly /></label>
           <label className={styles.fieldLabel}>Account role<input value="Veterinarian" readOnly /></label>
-          <button type="button" className={styles.primaryButton} onClick={() => saveNotice('Profile edits are preview-only and were not saved to your account.')}>Save profile</button>
+          <button type="button" className={styles.primaryButton} disabled={state.saving} onClick={() => void saveProfile()}>{state.saving ? 'Saving…' : 'Save profile'}</button>
         </article>
         <article className={styles.profileCard}><h2>Account access</h2><p className={styles.description}>Your clinic account and sign-in permissions are managed by the clinic administrator.</p><button type="button" className={styles.softButton} onClick={() => onNavigate('appointments')}>Review appointments</button></article>
       </div>}
 
       {view === 'availability' && <>
         <article className={styles.availabilityCard}>
-          <div className={styles.sectionHeading}><div><h2>Weekly clinic hours</h2><p>Set the days and hours shown for booking.</p></div><Status>Preview only</Status></div>
+          <div className={styles.sectionHeading}><div><h2>Weekly doctor availability</h2><p>Set the recurring days and hours saved to your account.</p></div><Status>Saved</Status></div>
           <div className={styles.timeRange}><label className={styles.fieldLabel}>Opens<input type="time" value={state.startTime} onChange={(event) => dispatch({ type: 'SET_START_TIME', value: event.target.value })} /></label><span>to</span><label className={styles.fieldLabel}>Closes<input type="time" value={state.endTime} onChange={(event) => dispatch({ type: 'SET_END_TIME', value: event.target.value })} /></label></div>
-          <div className={styles.weekdays}>{WEEKDAYS.map((day) => <label className={styles.weekday} key={day}><span>{day}</span><input type="checkbox" checked={state.activeDays[day]} onChange={() => dispatch({ type: 'TOGGLE_DAY', day })} /><small>{state.activeDays[day] ? 'Open' : 'Closed'}</small></label>)}</div>
-          <button type="button" className={styles.primaryButton} onClick={() => saveNotice('Availability changes are preview-only and have not been published.')}>Save availability</button>
+          <div className={styles.weekdays}>{WEEKDAYS.map((day, index) => { const weekday = String(WEEKDAY_NUMBERS[index]); const isAvailable = state.activeDays[weekday] ?? false; return <label className={styles.weekday} key={day}><span>{day}</span><input type="checkbox" checked={isAvailable} onChange={() => dispatch({ type: 'TOGGLE_DAY', day: weekday })} /><small>{isAvailable ? 'Available' : 'Unavailable'}</small></label>; })}</div>
+          <button type="button" className={styles.primaryButton} disabled={state.saving} onClick={() => void saveAvailability()}>{state.saving ? 'Saving…' : 'Save availability'}</button>
         </article>
-        <p className={styles.muted}>Appointment requests are validated against the clinic’s configured hours. Changes here do not affect booking until availability is connected to the server.</p>
+        <p className={styles.muted}>Saved hours are stored per doctor. Appointment booking continues to enforce the clinic’s configured opening hours.</p>
       </>}
 
       {view === 'settings' && <article className={styles.settingsCard}>
@@ -510,7 +800,7 @@ export function DoctorWorkspacePages({
           ['labResults', 'Laboratory results', 'New results ready for doctor review.'],
           ['inventoryAlerts', 'Inventory alerts', 'Low-stock product notifications.'],
         ] as const).map(([key, label, description]) => <label className={styles.settingRow} key={key}><span><b>{label}</b><small>{description}</small></span><input type="checkbox" checked={state.notificationSettings[key] ?? false} onChange={() => dispatch({ type: 'TOGGLE_SETTING', key })} /></label>)}
-        <button type="button" className={styles.primaryButton} onClick={() => saveNotice('Settings are preview-only and were not saved to an account.')}>Save settings</button>
+        <button type="button" className={styles.primaryButton} disabled={state.saving} onClick={() => void savePreferences()}>{state.saving ? 'Saving…' : 'Save settings'}</button>
       </article>}
     </section>
   );

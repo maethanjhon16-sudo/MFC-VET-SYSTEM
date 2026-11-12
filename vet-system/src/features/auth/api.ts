@@ -193,6 +193,205 @@ export function getStaffPatients() {
   return request<{ patients: DoctorPatient[] }>('/api/staff/patients', undefined, 'GET');
 }
 
+export interface ClinicalRecord {
+  id: string;
+  petId: string;
+  appointmentId: string | null;
+  recordType: string;
+  summary: string;
+  diagnosis: string;
+  treatment: string;
+  followUpAt: string | null;
+  createdAt: string;
+  petName: string;
+  species: PetSpecies;
+  ownerName: string;
+  doctorName: string;
+}
+
+export function getStaffClinicalRecords() {
+  return request<{ records: ClinicalRecord[] }>('/api/staff/clinical-records', undefined, 'GET');
+}
+
+export function createStaffClinicalRecord(input: {
+  petId: string;
+  recordType: string;
+  summary: string;
+  diagnosis: string;
+  treatment: string;
+  followUpAt: string | null;
+}) {
+  return request<{ record: ClinicalRecord }>('/api/staff/clinical-records', input);
+}
+
+export interface LabResult {
+  id: string;
+  petId: string;
+  appointmentId: string | null;
+  testName: string;
+  status: 'pending' | 'in_lab' | 'ready' | 'reviewed';
+  resultText: string;
+  requestedAt: string;
+  reviewedAt: string | null;
+  petName: string;
+  species: PetSpecies;
+  ownerName: string;
+}
+
+export function getStaffLabResults() {
+  return request<{ labResults: LabResult[] }>('/api/staff/lab-results', undefined, 'GET');
+}
+
+export function createStaffLabResult(input: { petId: string; testName: string; appointmentId?: string | null }) {
+  return request<{ labResult: LabResult }>('/api/staff/lab-results', input);
+}
+
+export function reviewStaffLabResult(id: string) {
+  return request<{ labResult: Pick<LabResult, 'id' | 'status' | 'reviewedAt'> }>(`/api/staff/lab-results/${encodeURIComponent(id)}/review`);
+}
+
+export interface StaffFollowUp {
+  id: string;
+  petId: string;
+  recordType: string;
+  summary: string;
+  followUpAt: string;
+  petName: string;
+  species: PetSpecies;
+  ownerName: string;
+}
+
+export function getStaffFollowUps() {
+  return request<{ followUps: StaffFollowUp[] }>('/api/staff/follow-ups', undefined, 'GET');
+}
+
+export interface StaffConversation {
+  id: string;
+  petId: string;
+  ownerId: string;
+  doctorId: string;
+  petName: string;
+  ownerName: string;
+  updatedAt: string;
+  latestMessage: string | null;
+  latestMessageAt: string | null;
+  unreadCount: number;
+}
+
+export interface StaffMessage {
+  id: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export function getStaffConversations() {
+  return request<{ conversations: StaffConversation[] }>('/api/staff/conversations', undefined, 'GET');
+}
+
+export function getStaffConversationMessages(id: string) {
+  return request<{ messages: StaffMessage[] }>(`/api/staff/conversations/${encodeURIComponent(id)}/messages`, undefined, 'GET');
+}
+
+export function startStaffConversation(input: { petId: string; body: string }) {
+  return request<{ conversationId: string; message: StaffMessage }>('/api/staff/conversations', input);
+}
+
+export function sendStaffMessage(id: string, body: string) {
+  return request<{ message: StaffMessage }>(`/api/staff/conversations/${encodeURIComponent(id)}/messages`, { body });
+}
+
+export interface ClinicServiceSetting {
+  serviceId: string;
+  isEnabled: boolean;
+  updatedAt: string;
+}
+
+export function getStaffServices() {
+  return request<{ services: ClinicServiceSetting[] }>('/api/staff/services', undefined, 'GET');
+}
+
+export function setStaffServiceEnabled(id: string, isEnabled: boolean) {
+  return request<{ service: ClinicServiceSetting }>(`/api/staff/services/${encodeURIComponent(id)}`, { isEnabled }, 'PATCH');
+}
+
+export interface InventoryItem {
+  productId: string;
+  quantity: number;
+  updatedBy: string | null;
+  updatedAt: string;
+}
+
+export function getStaffInventory() {
+  return request<{ inventory: InventoryItem[] }>('/api/staff/inventory', undefined, 'GET');
+}
+
+export function setStaffInventoryQuantity(productId: string, quantity: number) {
+  return request<{ item: InventoryItem }>(`/api/staff/inventory/${encodeURIComponent(productId)}`, { quantity }, 'PUT');
+}
+
+export interface StaffProfile {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  specialization: string | null;
+}
+
+export function getStaffProfile() {
+  return request<{ profile: StaffProfile }>('/api/staff/profile', undefined, 'GET');
+}
+
+export function updateStaffProfile(input: { fullName: string; phone: string }) {
+  return request<{ profile: StaffProfile }>('/api/staff/profile', input, 'PATCH');
+}
+
+export interface DoctorAvailabilityDay {
+  weekday: number;
+  isAvailable: boolean;
+  startsAt: string;
+  endsAt: string;
+  updatedAt?: string;
+}
+
+export function getStaffAvailability() {
+  return request<{ availability: DoctorAvailabilityDay[] }>('/api/staff/availability', undefined, 'GET');
+}
+
+export function saveStaffAvailability(days: DoctorAvailabilityDay[]) {
+  return request<{ availability: DoctorAvailabilityDay[] }>('/api/staff/availability', { days }, 'PUT');
+}
+
+export interface DoctorNotificationSettings {
+  appointmentRequests: boolean;
+  followUpReminders: boolean;
+  labResults: boolean;
+  inventoryAlerts: boolean;
+}
+
+export function getStaffPreferences() {
+  return request<{ preferences: { notificationSettings: DoctorNotificationSettings; updatedAt: string } }>('/api/staff/preferences', undefined, 'GET');
+}
+
+export function saveStaffPreferences(notificationSettings: DoctorNotificationSettings) {
+  return request<{ preferences: { notificationSettings: DoctorNotificationSettings; updatedAt: string } }>('/api/staff/preferences', { notificationSettings }, 'PUT');
+}
+
+export interface StaffOrder {
+  id: string;
+  status: 'new' | 'preparing' | 'out_for_delivery' | 'delivered' | 'cancelled';
+  paymentMethod: string;
+  totalAmount: string;
+  createdAt: string;
+  customerName: string;
+  items: { productId: string; productName: string; quantity: number; unitPrice: string }[];
+}
+
+export function getStaffOrders() {
+  return request<{ orders: StaffOrder[] }>('/api/staff/orders', undefined, 'GET');
+}
+
 export function getStaffDoctors() {
   return request<{ doctors: BookingDoctor[] }>('/api/staff/doctors', undefined, 'GET');
 }

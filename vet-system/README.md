@@ -30,7 +30,8 @@ are required to compile the frontend, even when `NODE_ENV=production`.
 Create a free Neon Postgres project and copy its pooled connection string into
 `DATABASE_URL` when Render prompts for the Blueprint secret. Keep this value on the Render
 backend only; never put it in a `VITE_` variable or commit it to GitHub. The API initializes
-its auth and appointment schemas on first database use. Render health checks verify the web process;
+its auth, pet, appointment, clinical-record, lab, messaging, availability, service, inventory,
+and order schemas on first database use. Render health checks verify the web process;
 `/api/health` reports whether a database URL is configured, not whether Neon is reachable.
 The deployment uses Node 22.12 through 24 (required by the Vite build tool).
 

@@ -97,6 +97,15 @@
 .settingRow > span { display: grid; gap: 5px; }
 .settingRow b { color: var(--color-ink); font-size: 12px; }
 .settingRow small { color: var(--color-mute); font-size: 10px; line-height: 1.4; }
+.dataForm, .newConversation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 16px; border: 1px solid var(--color-line); border-radius: 10px; background: #fff; }
+.dataForm > label, .newConversation > label { display: grid; gap: 6px; color: var(--color-mute); font-size: 10px; font-weight: 700; }
+.dataForm input, .dataForm select, .dataForm textarea, .newConversation select, .newConversation textarea { width: 100%; min-width: 0; min-height: 38px; padding: 9px 10px; border: 1px solid var(--color-line); border-radius: 7px; color: var(--color-ink); background: #fff; font: inherit; font-size: 11px; }
+.dataForm textarea, .newConversation textarea { resize: vertical; }
+.wideField { grid-column: 1 / -1; }
+.formActions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; grid-column: 1 / -1; }
+.newConversation { grid-template-columns: 1fr; padding: 11px; }
+.error { margin: 0; padding: 11px 13px; border: 1px solid #e8c9c4; border-radius: 8px; color: #8d4037; background: #fbefed; font-size: 11px; }
+.error button { margin-left: 10px; padding: 0; border: 0; color: inherit; background: transparent; font: inherit; font-weight: 800; text-decoration: underline; }
 @media (max-width: 1100px) {
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .serviceGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -116,4 +125,6 @@
   .weekdays { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .timeRange { max-width: none; }
   .rowActions { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .dataForm { grid-template-columns: 1fr; }
+  .wideField, .formActions { grid-column: auto; }
 }

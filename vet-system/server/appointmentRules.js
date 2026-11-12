@@ -40,3 +40,26 @@ export function isValidAppointmentTime(value, durationMinutes, now = Date.now())
     && start >= 8 * 60
     && start + durationMinutes <= 18 * 60;
 }
+
+export function isWithinDoctorAvailability(value, durationMinutes, availability) {
+  if (!availability) return true;
+  if (typeof value !== 'string' || !Number.isInteger(durationMinutes) || durationMinutes < 1) return false;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return false;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Manila',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
+  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(values.weekday);
+  const startMinute = Number(values.hour) * 60 + Number(values.minute);
+  const [startHour, startMinutes] = availability.starts_at.split(':').map(Number);
+  const [endHour, endMinutes] = availability.ends_at.split(':').map(Number);
+  return availability.is_available
+    && availability.weekday === weekday
+    && startMinute >= startHour * 60 + startMinutes
+    && startMinute + durationMinutes <= endHour * 60 + endMinutes;
+}
