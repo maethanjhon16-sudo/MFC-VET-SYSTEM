@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { OwnerShell } from '../../components/owner/OwnerShell';
 import { getOwnerInventory, getOwnerNotificationCount, getOwnerServices } from '../auth/api';
 import { getProduct, getService, PRODUCTS, SERVICES } from './data';
@@ -84,6 +84,7 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
   const [inventoryError, setInventoryError] = useState<string | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
   const [notificationError, setNotificationError] = useState<string | null>(null);
+  const inventoryRequestId = useRef(0);
 
   const nav = useMemo<OwnerNav>(
     () => ({
@@ -194,23 +195,28 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
     };
   }, []);
 
+  const refreshInventory = useCallback(async () => {
+    const requestId = ++inventoryRequestId.current;
+    try {
+      const { inventory } = await getOwnerInventory();
+      if (requestId !== inventoryRequestId.current) return;
+      setStockLevels(Object.fromEntries(inventory.map((item) => [item.productId, item.quantity])));
+      setInventoryReady(true);
+      setInventoryError(null);
+    } catch (error) {
+      if (requestId !== inventoryRequestId.current) return;
+      setInventoryReady(false);
+      setInventoryError(error instanceof Error ? error.message : 'Could not load current product stock.');
+    }
+  }, []);
+
   useEffect(() => {
-    let active = true;
     let loading = false;
     const refresh = async () => {
       if (loading) return;
       loading = true;
       try {
-        const { inventory } = await getOwnerInventory();
-        if (active) {
-          setStockLevels(Object.fromEntries(inventory.map((item) => [item.productId, item.quantity])));
-          setInventoryReady(true);
-          setInventoryError(null);
-        }
-      } catch (error) {
-        if (active) {
-          setInventoryError(error instanceof Error ? error.message : 'Could not load current product stock.');
-        }
+        await refreshInventory();
       } finally {
         loading = false;
       }
@@ -223,12 +229,17 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
     document.addEventListener('visibilitychange', refreshIfVisible);
     window.addEventListener('focus', refreshIfVisible);
     return () => {
-      active = false;
+      inventoryRequestId.current += 1;
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', refreshIfVisible);
       window.removeEventListener('focus', refreshIfVisible);
     };
-  }, []);
+  }, [refreshInventory]);
+
+  const handleOrderPlaced = () => {
+    nav.orders();
+    void refreshInventory();
+  };
 
   // New page → start at the top.
   useEffect(() => {
@@ -287,7 +298,7 @@ export function OwnerFlow({ initialScreen = 'owner-home', ownerId, ownerName, on
           onRemove={(line) => dispatch({ type: 'REMOVE_CART_LINE', productId: line.productId, sizeIndex: line.sizeIndex })}
           onClear={() => dispatch({ type: 'CLEAR_CART' })}
           onContinueShopping={() => nav.shop()}
-          onOrderPlaced={nav.orders}
+          onOrderPlaced={handleOrderPlaced}
           stockLevels={stockLevels}
           inventoryReady={inventoryReady}
           inventoryError={inventoryError}

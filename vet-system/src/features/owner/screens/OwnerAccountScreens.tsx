@@ -149,6 +149,7 @@ export function OwnerNotifications({ nav }: { nav: OwnerNav }) {
     }
     if (item.eventType.includes('appointment') || item.eventType === 'revisit_suggested') nav.appointments();
     else if (item.eventType === 'care_team_message') nav.messages();
+    else if (item.eventType === 'order_placed' || item.eventType === 'order_updated') nav.orders();
     else nav.records();
   };
 

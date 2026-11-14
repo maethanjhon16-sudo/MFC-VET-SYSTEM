@@ -103,7 +103,7 @@ export function OwnerCart({
         <div className={s.title}>
           <span className={s.eyebrow}>SHOPPING BAG</span>
           <h1>Your cart</h1>
-          <p>Review items and send an order request to the clinic.</p>
+          <p>Adding items does not change stock. Availability is checked again, and stock is deducted only after your order is submitted successfully.</p>
         </div>
         <button type="button" className={`${s.btn} ${s.btnSecondary}`} onClick={onContinueShopping}>Continue shopping</button>
       </header>
