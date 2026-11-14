@@ -182,8 +182,12 @@ type ClinicalRecord = {
 
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const WEEKDAY_NUMBERS = [1, 2, 3, 4, 5, 6, 0];
-const ORDER_FILTERS = ['All', 'New', 'Preparing', 'Out for delivery', 'Delivered', 'Cancelled'];
-const ORDER_STATUSES: StaffOrder['status'][] = ['new', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'];
+const ORDER_FILTERS = ['All', 'Pending', 'Confirmed', 'Preparing', 'Ready for pickup', 'Out for delivery', 'Completed', 'Cancelled'];
+const ORDER_STATUSES: StaffOrder['status'][] = ['pending', 'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'completed', 'cancelled'];
+function orderStatusLabel(status: StaffOrder['status']): string {
+  return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function isOrderStatus(value: string): value is StaffOrder['status'] {
   return ORDER_STATUSES.some((status) => status === value);
 }
@@ -366,6 +370,28 @@ function manilaDate(offsetDays = 0): string {
   const date = new Date(`${values.year}-${values.month}-${values.day}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + offsetDays);
   return date.toISOString().slice(0, 10);
+}
+
+function manilaDateTimeLocal(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+}
+
+function formatManilaDateTime(value: string): string {
+  return new Date(value).toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 }
 
 function exportCsv(filename: string, rows: string[][]): void {
@@ -599,9 +625,10 @@ export function DoctorWorkspacePages({
     owner: result.ownerName,
     test: result.testName,
     date: new Date(result.requestedAt).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }),
+    expectedDate: result.expectedAt ? formatManilaDateTime(result.expectedAt) : 'Not scheduled',
     displayStatus: result.status === 'in_lab' ? 'In lab' : result.status === 'ready' ? 'Ready' : result.status === 'reviewed' ? 'Reviewed' : 'Pending',
   })).filter((result) => {
-    const matchesText = `${result.patient} ${result.owner} ${result.test}`.toLowerCase().includes(query);
+    const matchesText = `${result.patient} ${result.owner} ${result.test} ${result.reason}`.toLowerCase().includes(query);
     const matchesStatus = state.filters.lab === 'All' || result.displayStatus === state.filters.lab;
     return matchesText && matchesStatus;
   }), [query, state.filters.lab, state.labResults]);
@@ -640,7 +667,7 @@ export function DoctorWorkspacePages({
   );
   const visibleProducts = PRODUCTS.filter((product) => `${product.name} ${product.category}`.toLowerCase().includes(query));
   const visibleOrders = state.orders.filter((order) => `${order.id} ${order.customerName} ${order.items.map((item) => item.productName).join(' ')}`.toLowerCase().includes(query)
-    && (state.filters.order === 'All' || order.status.replaceAll('_', ' ') === state.filters.order.toLowerCase()));
+    && (state.filters.order === 'All' || orderStatusLabel(order.status).toLowerCase() === state.filters.order.toLowerCase()));
   const conversations = state.conversations.filter((conversation) => `${conversation.ownerName} ${conversation.petName} ${conversation.latestMessage ?? ''}`.toLowerCase().includes(query));
   const selectedConversation = state.conversations.find((conversation) => conversation.id === state.selectedConversationId);
 
@@ -730,7 +757,17 @@ export function DoctorWorkspacePages({
     if (!petId || !testName) return;
     dispatch({ type: 'SAVING', value: true });
     try {
-      const { labResult } = await createStaffLabResult({ petId, testName });
+      const expectedAt = String(formData.get('expectedAt') ?? '');
+      if (!expectedAt) {
+        dispatch({ type: 'ACTION_FAILED', message: 'Choose when the test is expected.' });
+        return;
+      }
+      const { labResult } = await createStaffLabResult({
+        petId,
+        testName,
+        reason: String(formData.get('reason') ?? '').trim(),
+        expectedAt: new Date(`${expectedAt}:00+08:00`).toISOString(),
+      });
       dispatch({ type: 'LAB_CREATED', labResult });
     } catch (error) {
       dispatch({ type: 'ACTION_FAILED', message: error instanceof Error ? error.message : 'Could not save this lab request.' });
@@ -953,24 +990,27 @@ export function DoctorWorkspacePages({
         {state.labFormOpen && <form className={styles.dataForm} onSubmit={(event) => void submitLab(event)}>
           <label>Patient<select name="petId" required defaultValue=""><option value="" disabled>Choose a patient</option>{patients.map((patient) => <option value={patient.id} key={patient.id}>{patient.name} · {patient.owner}</option>)}</select></label>
           <label>Test name<input name="testName" required maxLength={120} placeholder="e.g. CBC panel" /></label>
+          <label className={styles.wideField}>Reason for test<textarea name="reason" required maxLength={2000} rows={2} placeholder="Why is this test needed?" /></label>
+          <label>Expected test date and time<input name="expectedAt" type="datetime-local" min={manilaDateTimeLocal()} required /></label>
+          <p className={`${styles.muted} ${styles.wideField}`}>The scheduled test will appear in your calendar and the pet owner’s medical records.</p>
           <div className={styles.formActions}><button type="button" className={styles.secondaryButton} onClick={() => dispatch({ type: 'TOGGLE_LAB_FORM' })}>Cancel</button><button type="submit" className={styles.primaryButton} disabled={state.saving}>{state.saving ? 'Saving…' : 'Create lab request'}</button></div>
         </form>}
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search patient or test..." /></div>
         <FilterButtons values={LAB_FILTERS} selected={state.filters.lab} onSelect={(value) => dispatch({ type: 'SET_FILTER', key: 'lab', value })} />
         <div className={styles.tableWrap}><table className={styles.table}>
-          <thead><tr><th>Patient</th><th>Test</th><th>Requested</th><th>Result</th><th>Status</th><th>Action</th></tr></thead>
+          <thead><tr><th>Patient</th><th>Test</th><th>Reason</th><th>Requested</th><th>Expected test</th><th>Result</th><th>Status</th><th>Action</th></tr></thead>
           <tbody>{labRows.map((result) => (
             <Fragment key={result.id}>
               <tr>
                 <td><button type="button" className={styles.patientLink} onClick={() => onOpenPatient(result.petId)}><b>{result.patient}</b><small>{result.owner}</small></button></td>
-                <td>{result.test}</td><td>{result.date}</td><td className={styles.summaryCell}>{result.resultText || 'Not entered yet'}</td><td><Status>{result.displayStatus}</Status></td>
+                <td>{result.test}</td><td className={styles.summaryCell}>{result.reason}</td><td>{result.date}</td><td>{result.expectedDate}</td><td className={styles.summaryCell}>{result.resultText || 'Not entered yet'}</td><td><Status>{result.displayStatus}</Status></td>
                 <td><div className={styles.rowActions}>
                   {result.displayStatus !== 'Reviewed' && <button type="button" className={styles.textButton} disabled={state.saving} onClick={() => beginLabEdit(result)}>Update result</button>}
                   {result.displayStatus === 'Ready' && <button type="button" className={styles.textButton} disabled={state.saving} onClick={() => void markLabReviewed(result.id)}>Mark reviewed</button>}
                   {result.displayStatus === 'Reviewed' && <span className={styles.muted}>Reviewed</span>}
                 </div></td>
               </tr>
-              {editingLabId === result.id && <tr><td colSpan={6}>
+              {editingLabId === result.id && <tr><td colSpan={8}>
                 <form className={styles.dataForm} onSubmit={(event) => void saveLabResult(event)}>
                   <label>Status<select value={labStatusDraft} onChange={(event) => setLabStatusDraft(event.target.value as 'in_lab' | 'ready')}>
                     <option value="in_lab">In lab</option><option value="ready">Ready for review</option>
@@ -983,7 +1023,7 @@ export function DoctorWorkspacePages({
                 </form>
               </td></tr>}
             </Fragment>
-          ))}{labRows.length === 0 && <tr><td colSpan={6} className={styles.empty}>No lab results match this filter.</td></tr>}</tbody>
+          ))}{labRows.length === 0 && <tr><td colSpan={8} className={styles.empty}>No lab results match this filter.</td></tr>}</tbody>
         </table></div>
       </>}
 
@@ -1125,20 +1165,22 @@ export function DoctorWorkspacePages({
       {view === 'orders' && <>
         <div className={styles.metrics}>
           <article><span>Orders</span><b>{state.orders.length}</b><small>Saved orders</small></article>
-          <article><span>New</span><b>{state.orders.filter((order) => order.status === 'new').length}</b><small>Awaiting confirmation</small></article>
-          <article><span>Preparing</span><b>{state.orders.filter((order) => order.status === 'preparing').length}</b><small>Being packed</small></article>
-          <article><span>Delivered</span><b>{state.orders.filter((order) => order.status === 'delivered').length}</b><small>Completed orders</small></article>
+          <article><span>Pending</span><b>{state.orders.filter((order) => order.status === 'pending').length}</b><small>Awaiting confirmation</small></article>
+          <article><span>In progress</span><b>{state.orders.filter((order) => ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'].includes(order.status)).length}</b><small>Being fulfilled</small></article>
+          <article><span>Completed</span><b>{state.orders.filter((order) => order.status === 'completed').length}</b><small>Fulfilled orders</small></article>
         </div>
         <div className={styles.toolbar}><SearchBox value={state.query} onChange={(value) => dispatch({ type: 'SET_QUERY', value })} placeholder="Search by order number or customer..." /></div>
         <FilterButtons values={ORDER_FILTERS} selected={state.filters.order} onSelect={(value) => dispatch({ type: 'SET_FILTER', key: 'order', value })} />
         <div className={styles.tableWrap}><table className={styles.table}>
           <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Fulfillment</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead>
           <tbody>{visibleOrders.map((order) => {
-            const nextStatuses: StaffOrder['status'][] = order.status === 'new'
-              ? ['preparing', 'cancelled']
+            const nextStatuses: StaffOrder['status'][] = order.status === 'pending'
+              ? ['confirmed', 'cancelled']
+              : order.status === 'confirmed'
+                ? ['preparing', 'cancelled']
               : order.status === 'preparing'
-                ? order.fulfillmentMethod === 'delivery' ? ['out_for_delivery', 'cancelled'] : ['delivered', 'cancelled']
-                : order.status === 'out_for_delivery' ? ['delivered'] : [];
+                ? order.fulfillmentMethod === 'delivery' ? ['out_for_delivery', 'cancelled'] : ['ready_for_pickup', 'cancelled']
+                : order.status === 'ready_for_pickup' || order.status === 'out_for_delivery' ? ['completed'] : [];
             return <tr key={order.id}>
               <td><b>#{order.id}</b></td>
               <td>{order.customerName}<small>{order.contactPhone}</small></td>
@@ -1156,8 +1198,8 @@ export function DoctorWorkspacePages({
                     if (isOrderStatus(event.target.value)) void updateOrder(order.id, event.target.value);
                   }}
                 >
-                  <option value={order.status}>{order.status.replaceAll('_', ' ')}</option>
-                  {nextStatuses.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
+                  <option value={order.status}>{orderStatusLabel(order.status)}</option>
+                  {nextStatuses.map((status) => <option key={status} value={status}>{orderStatusLabel(status)}</option>)}
                 </select>
               </td>
             </tr>;

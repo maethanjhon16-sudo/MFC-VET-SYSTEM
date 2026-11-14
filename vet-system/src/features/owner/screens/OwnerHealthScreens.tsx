@@ -371,6 +371,8 @@ export function OwnerMedicalRecords({ nav, initialPetId = '' }: { nav: OwnerNav;
                 {entry.record.followUpCompletedAt ? ` · Completed ${formatWhen(entry.record.followUpCompletedAt)}` : ''}
               </small>}
               {entry.kind === 'lab' && <span className={`${s.badge} ${entry.result.status === 'ready' || entry.result.status === 'reviewed' ? s.badgeOk : s.badgeWarn}`}>{entry.result.status.replaceAll('_', ' ')}</span>}
+              {entry.kind === 'lab' && entry.result.reason && <small><b>Reason for test:</b> {entry.result.reason}</small>}
+              {entry.kind === 'lab' && entry.result.expectedAt && <small><b>Expected test:</b> {formatWhen(entry.result.expectedAt)}</small>}
             </div>
           </article>
         ))}

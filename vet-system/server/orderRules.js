@@ -1,4 +1,12 @@
-const ORDER_STATUSES = new Set(['new', 'preparing', 'out_for_delivery', 'delivered', 'cancelled']);
+const ORDER_STATUSES = new Set([
+  'pending',
+  'confirmed',
+  'preparing',
+  'ready_for_pickup',
+  'out_for_delivery',
+  'completed',
+  'cancelled',
+]);
 
 export function getInventoryShortages(items, inventory) {
   const requested = new Map();
@@ -17,12 +25,14 @@ export function canTransitionOrderStatus(currentStatus, nextStatus, fulfillmentM
   if (!['clinic_pickup', 'delivery'].includes(fulfillmentMethod)) return false;
 
   const transitions = {
-    new: ['preparing', 'cancelled'],
+    pending: ['confirmed', 'cancelled'],
+    confirmed: ['preparing', 'cancelled'],
     preparing: fulfillmentMethod === 'delivery'
       ? ['out_for_delivery', 'cancelled']
-      : ['delivered', 'cancelled'],
-    out_for_delivery: ['delivered'],
-    delivered: [],
+      : ['ready_for_pickup', 'cancelled'],
+    ready_for_pickup: ['completed'],
+    out_for_delivery: ['completed'],
+    completed: [],
     cancelled: [],
   };
   return transitions[currentStatus].includes(nextStatus);

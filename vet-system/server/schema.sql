@@ -141,6 +141,8 @@ CREATE TABLE IF NOT EXISTS lab_results (
   test_name text NOT NULL,
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_lab', 'ready', 'reviewed')),
   result_text text NOT NULL DEFAULT '',
+  reason text NOT NULL DEFAULT '',
+  expected_at timestamptz,
   requested_at timestamptz NOT NULL DEFAULT now(),
   reviewed_at timestamptz,
   updated_by text REFERENCES users(id) ON DELETE SET NULL
@@ -149,8 +151,18 @@ CREATE TABLE IF NOT EXISTS lab_results (
 ALTER TABLE lab_results
   ADD COLUMN IF NOT EXISTS updated_by text REFERENCES users(id) ON DELETE SET NULL;
 
+ALTER TABLE lab_results
+  ADD COLUMN IF NOT EXISTS reason text NOT NULL DEFAULT '';
+
+ALTER TABLE lab_results
+  ADD COLUMN IF NOT EXISTS expected_at timestamptz;
+
 CREATE INDEX IF NOT EXISTS lab_results_doctor_requested_idx
   ON lab_results (doctor_id, requested_at DESC);
+
+CREATE INDEX IF NOT EXISTS lab_results_doctor_expected_idx
+  ON lab_results (doctor_id, expected_at ASC)
+  WHERE expected_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS doctor_conversations (
   id text PRIMARY KEY,
@@ -238,7 +250,7 @@ CREATE TABLE IF NOT EXISTS doctor_preferences (
 CREATE TABLE IF NOT EXISTS orders (
   id text PRIMARY KEY,
   owner_id text NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-  status text NOT NULL CHECK (status IN ('new', 'preparing', 'out_for_delivery', 'delivered', 'cancelled')),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'completed', 'cancelled')),
   payment_method text NOT NULL,
   fulfillment_method text NOT NULL DEFAULT 'clinic_pickup',
   delivery_address text NOT NULL DEFAULT '',
@@ -264,6 +276,15 @@ ALTER TABLE orders
 
 ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS updated_by text REFERENCES users(id) ON DELETE SET NULL;
+
+DROP TRIGGER IF EXISTS activity_orders_changed ON orders;
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+UPDATE orders SET status = 'pending' WHERE status = 'new';
+UPDATE orders SET status = 'completed' WHERE status = 'delivered';
+ALTER TABLE orders
+  ADD CONSTRAINT orders_status_check
+  CHECK (status IN ('pending', 'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'completed', 'cancelled'));
+ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending';
 
 CREATE TABLE IF NOT EXISTS order_items (
   id text PRIMARY KEY,
@@ -432,14 +453,26 @@ BEGIN
   ELSIF TG_TABLE_NAME = 'lab_results' THEN
     IF TG_OP = 'UPDATE'
        AND (old_row ->> 'status') IS NOT DISTINCT FROM (new_row ->> 'status')
-       AND (old_row ->> 'result_text') IS NOT DISTINCT FROM (new_row ->> 'result_text') THEN
+       AND (old_row ->> 'result_text') IS NOT DISTINCT FROM (new_row ->> 'result_text')
+       AND (old_row ->> 'reason') IS NOT DISTINCT FROM (new_row ->> 'reason')
+       AND (old_row ->> 'expected_at') IS NOT DISTINCT FROM (new_row ->> 'expected_at') THEN
       RETURN NEW;
     END IF;
     actor_id_value := COALESCE(new_row ->> 'updated_by', new_row ->> 'doctor_id');
     SELECT owner_id, name INTO owner_id_value, pet_name_value FROM pets WHERE id = new_row ->> 'pet_id';
-    event_type_value := CASE WHEN new_row ->> 'status' IN ('ready', 'reviewed') THEN 'lab_result_ready' ELSE 'lab_result_updated' END;
-    title_value := CASE WHEN new_row ->> 'status' IN ('ready', 'reviewed') THEN 'Lab result available' ELSE 'Lab test updated' END;
-    detail_value := COALESCE(pet_name_value, 'Pet') || ' · ' || (new_row ->> 'test_name');
+    event_type_value := CASE
+      WHEN TG_OP = 'INSERT' THEN 'lab_test_scheduled'
+      WHEN new_row ->> 'status' IN ('ready', 'reviewed') THEN 'lab_result_ready'
+      ELSE 'lab_result_updated'
+    END;
+    title_value := CASE event_type_value
+      WHEN 'lab_test_scheduled' THEN 'Lab test scheduled'
+      WHEN 'lab_result_ready' THEN 'Lab result available'
+      ELSE 'Lab test updated'
+    END;
+    detail_value := COALESCE(pet_name_value, 'Pet') || ' · ' || (new_row ->> 'test_name')
+      || CASE WHEN COALESCE(new_row ->> 'reason', '') = '' THEN '' ELSE ' · ' || (new_row ->> 'reason') END
+      || CASE WHEN new_row ->> 'expected_at' IS NULL THEN '' ELSE ' · Expected ' || to_char((new_row ->> 'expected_at')::timestamptz AT TIME ZONE 'Asia/Manila', 'Mon FMDD, YYYY FMHH:MI AM') END;
   ELSIF TG_TABLE_NAME = 'doctor_messages' THEN
     actor_id_value := new_row ->> 'sender_id';
     SELECT owner_id, pet_id INTO conversation_owner_id, pet_name_value
@@ -455,7 +488,7 @@ BEGIN
     actor_id_value := COALESCE(new_row ->> 'updated_by', new_row ->> 'owner_id');
     event_type_value := CASE WHEN TG_OP = 'INSERT' THEN 'order_placed' ELSE 'order_updated' END;
     title_value := CASE WHEN TG_OP = 'INSERT' THEN 'Shop order placed' ELSE 'Shop order updated' END;
-    detail_value := CASE WHEN TG_OP = 'INSERT' THEN 'A pet owner submitted a product order.' ELSE 'Order status changed to ' || (new_row ->> 'status') || '.' END;
+    detail_value := CASE WHEN TG_OP = 'INSERT' THEN 'A pet owner submitted a product order.' ELSE 'Order status changed to ' || replace(new_row ->> 'status', '_', ' ') || '.' END;
     owner_id_value := new_row ->> 'owner_id';
   ELSIF TG_TABLE_NAME = 'inventory_stock' THEN
     IF new_row ->> 'updated_by' IS NULL THEN

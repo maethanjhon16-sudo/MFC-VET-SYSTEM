@@ -50,15 +50,18 @@
 .attentionRow b { font-size: 10px; }
 .attentionRow small { color: #8b988e; font-size: 9px; }
 .attentionRow > svg:last-child { color: #87958a; }
-.activityList { display: grid; }
-.activityItem { display: flex; align-items: center; gap: 12px; padding: 15px 21px; border-bottom: 1px solid #eff2ee; }
-.activityItem:last-child { border-bottom: 0; }
-.activityUnread { background: #fbfdf9; }
-.activityUnread .activityIcon { color: #8b6324; background: #fbf4e3; }
-.activityCopy { flex: 1; min-width: 0; }
+.activityList { display: grid; gap: 10px; padding: 16px; }
+.activityItem { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 17px; border: 1px solid #e6ebe5; border-radius: 12px; color: inherit; background: #fff; box-shadow: 0 3px 12px rgba(28,55,38,.025); text-align: left; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
+.activityItem:not(:disabled) { cursor: pointer; }
+.activityItem:not(:disabled):hover { border-color: #b7cdb8; background: #fbfdf9; box-shadow: 0 5px 16px rgba(28,55,38,.06); }
+.activityItem:focus-visible { outline: 3px solid rgba(75,126,87,.25); outline-offset: 2px; }
+.activityUnread { border-color: #d7e5d5; background: #f7fbf6; }
+.activityIcon { width: 48px; height: 48px; border-radius: 14px; }
+.activityCopy { display: grid; flex: 1; min-width: 0; gap: 5px; }
 .activityCopy b { display: block; color: #35483a; font-size: 11px; }
-.activityCopy p { margin: 4px 0; color: #748178; font-size: 10px; line-height: 1.45; }
+.activityCopy > span { color: #748178; font-size: 10px; line-height: 1.45; }
 .activityCopy small { color: #9aa49c; font-size: 9px; }
+.unreadDot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: #54825a; }
 .markReadButton { padding: 7px 9px; font-size: 9px; }
 .markReadButton:disabled { opacity: .5; cursor: not-allowed; }
 .empty { padding: 32px 20px; color: #859188; font-size: 11px; text-align: center; }
@@ -110,8 +113,8 @@
   .metrics article > b { font-size: 24px; }
   .panelHeading { align-items: flex-start; padding: 16px; }
   .panelHeading p { max-width: 270px; }
-  .activityItem { align-items: flex-start; padding: 14px; }
-  .activityItem .markReadButton { margin-top: 3px; }
+  .activityItem { align-items: flex-start; gap: 10px; padding: 13px; }
+  .activityIcon { width: 42px; height: 42px; border-radius: 12px; }
   .application { align-items: flex-start; flex-wrap: wrap; padding: 15px; }
   .details > div { display: grid; gap: 5px; }
   .approveButton { width: 100%; }

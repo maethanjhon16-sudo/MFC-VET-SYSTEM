@@ -183,10 +183,12 @@ export function OwnerCart({
 }
 
 const ORDER_STATUS: Record<OwnerOrder['status'], string> = {
-  new: 'Received',
+  pending: 'Pending clinic confirmation',
+  confirmed: 'Confirmed',
   preparing: 'Preparing',
+  ready_for_pickup: 'Ready for pickup',
   out_for_delivery: 'Out for delivery',
-  delivered: 'Completed',
+  completed: 'Completed',
   cancelled: 'Cancelled',
 };
 
@@ -244,7 +246,7 @@ export function OwnerOrders({ nav }: { nav: OwnerNav }) {
           <article className={`${s.card} ${s.orderCard}`} key={order.id}>
             <div className={s.orderCardHeader}>
               <div><small>ORDER</small><h2>#{order.id.slice(0, 8).toUpperCase()}</h2><time>{orderDate(order.createdAt)}</time></div>
-              <span className={`${s.badge} ${order.status === 'cancelled' ? s.badgeWarn : order.status === 'delivered' ? s.badgeOk : s.badgeSage}`}>{ORDER_STATUS[order.status]}</span>
+              <span className={`${s.badge} ${order.status === 'cancelled' || order.status === 'pending' ? s.badgeWarn : order.status === 'completed' ? s.badgeOk : s.badgeSage}`}>{ORDER_STATUS[order.status]}</span>
             </div>
             <ul className={s.orderItemList}>
               {order.items.map((item, index) => (
