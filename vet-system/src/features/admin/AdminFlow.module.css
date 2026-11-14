@@ -5,8 +5,9 @@
 .brand b { display: block; font-size: 13px; letter-spacing: .04em; }
 .brand small { display: block; margin-top: 4px; color: #86948a; font-size: 8px; font-weight: 700; letter-spacing: .14em; }
 .headerRight { display: flex; align-items: center; gap: 18px; color: #738077; font-size: 12px; }
-.notificationButton { position: relative; display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid #e5ebe4; border-radius: 11px; color: #496551; background: #fff; cursor: pointer; }
-.notificationButton > span { position: absolute; top: -5px; right: -5px; min-width: 17px; padding: 2px 4px; border: 2px solid #fff; border-radius: 10px; color: #fff; font-size: 9px; font-weight: 800; text-align: center; }
+.notificationButton { position: relative; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #e6ebe7; border-radius: 50%; color: #25533a; background: #fff; cursor: pointer; }
+.notificationButton:hover { border-color: #a9c4ae; }
+.notificationButton > span { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border: 2px solid #fff; border-radius: 99px; color: #fff; background: #25533a; font-size: 10px; font-weight: 800; line-height: 14px; text-align: center; }
 .adminIdentity { display: flex; align-items: center; gap: 9px; color: #48594d; font-weight: 700; }
 .adminIdentity i { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #315940; background: #e8f0e5; font-size: 10px; font-style: normal; }
 .signOut { padding: 9px 13px; border: 1px solid #e0e7e0; border-radius: 8px; color: #435b49; background: #fff; font-size: 11px; font-weight: 700; cursor: pointer; }
@@ -92,6 +93,7 @@
   .header { min-height: 64px; padding: 0 14px; }
   .brandMark { width: 34px; height: 34px; }
   .headerRight { gap: 9px; }
+  .notificationButton { width: 38px; height: 38px; }
   .adminIdentity { font-size: 0; }
   .adminIdentity i { font-size: 9px; }
   .signOut { padding: 8px 9px; }

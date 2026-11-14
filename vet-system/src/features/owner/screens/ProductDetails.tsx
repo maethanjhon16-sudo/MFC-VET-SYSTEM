@@ -96,7 +96,7 @@ export function ProductDetails({ nav, product, stockCount, inventoryReady, maxQu
             {!inventoryReady
               ? 'Checking current stock…'
               : stockCount > 0
-                ? `${stockCount} in stock · ${maxQuantity} available to add`
+                ? `${stockCount} in stock · Cart items are not reserved until checkout`
                 : 'Out of stock'}
           </p>
 

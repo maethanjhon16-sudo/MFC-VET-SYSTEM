@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type FormEvent } from 'react';
 import {
   cancelOwnerAppointment,
   createOwnerAppointment,
@@ -24,6 +24,23 @@ function manilaDate(offsetDays = 0): string {
   const dateParts = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
   const date = new Date(`${dateParts.year}-${dateParts.month}-${dateParts.day}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+}
+
+function manilaDateKey(value: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(value));
+  const dateParts = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
+  return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+}
+
+function addCalendarDays(value: string, days: number): string {
+  const date = new Date(`${value}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 }
 
@@ -498,6 +515,31 @@ export function OwnerAppointments({ onBook, onCancel }: { onBook: () => void; on
     error: null,
     message: null,
   });
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedDate, setSelectedDate] = useState(() => manilaDate());
+  const [showAllAppointments, setShowAllAppointments] = useState(false);
+  const dateSelectionTouched = useRef(false);
+  const today = manilaDate();
+  const weekStart = useMemo(() => {
+    const weekday = new Date(`${today}T12:00:00Z`).getUTCDay();
+    return addCalendarDays(today, -((weekday + 6) % 7) + weekOffset * 7);
+  }, [today, weekOffset]);
+  const weekDates = useMemo(
+    () => Array.from({ length: 7 }, (_, index) => addCalendarDays(weekStart, index)),
+    [weekStart],
+  );
+  const scheduledByDate = useMemo(() => {
+    const byDate = new Map<string, Appointment[]>();
+    for (const appointment of state.appointments) {
+      if (appointment.status === 'cancelled' || appointment.status === 'declined') continue;
+      const date = manilaDateKey(appointment.scheduledAt);
+      byDate.set(date, [...(byDate.get(date) ?? []), appointment]);
+    }
+    return byDate;
+  }, [state.appointments]);
+  const visibleAppointments = showAllAppointments
+    ? state.appointments
+    : state.appointments.filter((appointment) => manilaDateKey(appointment.scheduledAt) === selectedDate);
 
   const load = useCallback(async () => {
     try {
@@ -507,6 +549,25 @@ export function OwnerAppointments({ onBook, onCancel }: { onBook: () => void; on
       dispatch({ type: 'LOAD_FAILED', message: errorMessage(error, 'Could not load your appointments.') });
     }
   }, []);
+
+  useEffect(() => {
+    if (dateSelectionTouched.current || state.loading || state.error) return;
+    const nextAppointment = state.appointments
+      .filter((appointment) =>
+        (appointment.status === 'pending' || appointment.status === 'confirmed')
+        && new Date(appointment.scheduledAt).getTime() >= Date.now(),
+      )
+      .sort((left, right) => new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime())[0];
+    if (!nextAppointment) return;
+
+    const nextDate = manilaDateKey(nextAppointment.scheduledAt);
+    const daysFromToday = Math.round(
+      (new Date(`${nextDate}T12:00:00Z`).getTime() - new Date(`${today}T12:00:00Z`).getTime()) / 86_400_000,
+    );
+    const todayWeekday = new Date(`${today}T12:00:00Z`).getUTCDay();
+    setWeekOffset(Math.floor(((todayWeekday + 6) % 7 + daysFromToday) / 7));
+    setSelectedDate(nextDate);
+  }, [state.appointments, state.error, state.loading, today]);
 
   useEffect(() => {
     void load();
@@ -556,14 +617,81 @@ export function OwnerAppointments({ onBook, onCancel }: { onBook: () => void; on
           <button type="button" className={styles.primaryButton} onClick={onBook}>＋&nbsp; Book appointment</button>
         </div>
       </header>
+      <section className={styles.weekCalendar} aria-label="Weekly appointment calendar">
+        <div className={styles.weekCalendarHeader}>
+          <div>
+            <span className={styles.eyebrow}>WEEKLY SCHEDULE</span>
+            <b>{new Date(`${weekStart}T12:00:00Z`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })} – {new Date(`${weekDates[6]}T12:00:00Z`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })}</b>
+          </div>
+          <div className={styles.weekControls}>
+            <button type="button" aria-label="Previous week" onClick={() => {
+              const nextOffset = weekOffset - 1;
+              dateSelectionTouched.current = true;
+              setWeekOffset(nextOffset);
+              setSelectedDate(addCalendarDays(weekStart, -7));
+              setShowAllAppointments(false);
+            }}>‹</button>
+            <button type="button" onClick={() => {
+              dateSelectionTouched.current = true;
+              setWeekOffset(0);
+              setSelectedDate(today);
+              setShowAllAppointments(false);
+            }}>Today</button>
+            <button type="button" aria-label="Next week" onClick={() => {
+              dateSelectionTouched.current = true;
+              setWeekOffset(weekOffset + 1);
+              setSelectedDate(addCalendarDays(weekStart, 7));
+              setShowAllAppointments(false);
+            }}>›</button>
+          </div>
+        </div>
+        <div className={styles.weekDays}>
+          {weekDates.map((date) => {
+            const dayAppointments = scheduledByDate.get(date) ?? [];
+            return (
+              <button
+                type="button"
+                key={date}
+                className={`${styles.weekDay} ${selectedDate === date ? styles.weekDaySelected : ''}`}
+                aria-label={`${new Date(`${date}T12:00:00Z`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric' })}, ${dayAppointments.length} scheduled visits`}
+                aria-pressed={selectedDate === date}
+                onClick={() => {
+                  dateSelectionTouched.current = true;
+                  setSelectedDate(date);
+                  setShowAllAppointments(false);
+                }}
+              >
+                <span>{new Date(`${date}T12:00:00Z`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'short' })}</span>
+                <b>{date.slice(-2)}</b>
+                <span className={styles.weekDayPets}>
+                  {dayAppointments.length === 0
+                    ? <i>No visits</i>
+                    : <>
+                      {dayAppointments.slice(0, 2).map((appointment) => <small key={appointment.id}>{appointment.petName}</small>)}
+                      {dayAppointments.length > 2 && <small>+{dayAppointments.length - 2} more</small>}
+                    </>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
       {state.error && <p className={styles.error} role="alert">{state.error}</p>}
       {state.message && <p className={styles.success} role="status">{state.message}</p>}
+      <div className={styles.listHeading}>
+        <h2>{showAllAppointments ? 'All appointments' : `Appointments for ${new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'short', day: 'numeric' })}`}</h2>
+        <button type="button" className={styles.showAllButton} onClick={() => setShowAllAppointments((current) => !current)}>
+          {showAllAppointments ? 'Show selected day' : 'Show all appointments'}
+        </button>
+      </div>
       <section className={styles.list}>
         {state.loading
           ? <p className={styles.empty}>Loading your appointments…</p>
           : state.appointments.length === 0
             ? <div className={`${styles.card} ${styles.emptyCard}`}><h2>No appointments yet</h2><p>Your submitted requests and confirmed visits will appear here.</p><button type="button" className={styles.primaryButton} onClick={onBook}>Book your first visit</button></div>
-            : state.appointments.map((appointment) => (
+            : visibleAppointments.length === 0
+              ? <div className={`${styles.card} ${styles.emptyCard}`}><h2>No visits scheduled for this day</h2><p>Choose another day in the calendar or review all appointment requests.</p><button type="button" className={styles.secondaryButton} onClick={() => setShowAllAppointments(true)}>Show all appointments</button></div>
+              : visibleAppointments.map((appointment) => (
               <article className={`${styles.card} ${styles.appointment}`} key={appointment.id}>
                 <div className={styles.dateMark}>
                   <span>{new Date(appointment.scheduledAt).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short' }).toUpperCase()}</span>

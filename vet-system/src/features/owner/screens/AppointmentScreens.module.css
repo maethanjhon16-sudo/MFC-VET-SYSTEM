@@ -45,6 +45,27 @@
 .success { color: #2d6541; background: var(--color-okbg); }
 .helper { color: var(--color-mute); font-size: 12px; }
 .list { display: grid; gap: 14px; }
+.weekCalendar { position: sticky; z-index: 4; top: 12px; display: grid; gap: 14px; padding: 18px; border: 1px solid var(--color-line); border-radius: 18px; background: var(--color-white); box-shadow: var(--shadow-card); }
+.weekCalendarHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.weekCalendarHeader > div:first-child { display: grid; gap: 5px; }
+.weekCalendarHeader .eyebrow { font-size: 10px; }
+.weekCalendarHeader b { color: var(--color-ink); font-size: 15px; }
+.weekControls { display: flex; align-items: center; gap: 6px; }
+.weekControls button { min-width: 36px; height: 34px; padding: 0 10px; border: 1px solid var(--color-line); border-radius: 9px; color: var(--color-forest); background: var(--color-white); font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.weekControls button:hover { border-color: var(--color-sagemid); background: var(--color-gray); }
+.weekDays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.weekDay { display: flex; min-width: 0; min-height: 104px; flex-direction: column; align-items: flex-start; gap: 5px; padding: 10px; border: 1px solid var(--color-line); border-radius: 12px; color: var(--color-mute); background: var(--color-off); text-align: left; cursor: pointer; }
+.weekDay > span:first-child { font-size: 11px; font-weight: 700; }
+.weekDay > b { color: var(--color-ink); font-size: 20px; line-height: 1; }
+.weekDaySelected { border-color: var(--color-forest); background: var(--color-sage); box-shadow: inset 0 0 0 1px var(--color-forest); }
+.weekDaySelected > span:first-child, .weekDaySelected > b { color: var(--color-forest); }
+.weekDayPets { display: grid; width: 100%; gap: 3px; margin-top: auto; overflow: hidden; }
+.weekDayPets small { overflow: hidden; color: var(--color-forest); font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.weekDayPets i { overflow: hidden; color: var(--color-mute); font-size: 10px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.listHeading { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 2px; }
+.listHeading h2 { margin: 0; color: var(--color-ink); font-size: 18px; }
+.showAllButton { padding: 8px 11px; border: 1px solid var(--color-line); border-radius: 9px; color: var(--color-forest); background: var(--color-white); font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+.showAllButton:hover { border-color: var(--color-sagemid); }
 .appointment { display: flex; align-items: center; gap: 18px; }
 .dateMark { display: flex; flex: 0 0 auto; flex-direction: column; align-items: center; justify-content: center; width: 64px; height: 70px; border-radius: 14px; color: var(--color-forest); background: var(--color-sage); }
 .dateMark span { font-size: 10px; font-weight: 800; letter-spacing: .08em; }
@@ -79,6 +100,10 @@
   .heading h1 { font-size: 27px; }
   .headingActions { width: 100%; }
   .headingActions > * { flex: 1; }
+  .weekCalendar { top: 8px; gap: 10px; padding: 12px; }
+  .weekDays { grid-template-columns: repeat(7, minmax(88px, 1fr)); overflow-x: auto; }
+  .weekDay { min-height: 91px; padding: 8px; }
+  .listHeading h2 { font-size: 16px; }
   .bookingLayout { grid-template-columns: 1fr; }
   .summary { grid-row: 1; }
   .appointment { align-items: flex-start; flex-wrap: wrap; }
@@ -91,6 +116,11 @@
 @media (max-width: 460px) {
   .fieldRow { grid-template-columns: 1fr; }
   .card { padding: 18px; }
+  .weekCalendarHeader { align-items: flex-start; }
+  .weekCalendarHeader b { font-size: 13px; }
+  .weekControls { gap: 4px; }
+  .weekControls button { min-width: 32px; height: 31px; padding: 0 8px; }
+  .listHeading { align-items: flex-start; flex-direction: column; }
   .status { margin-left: 0; }
   .appointmentActions, .appointment > .cancelRequest { margin-left: 0; }
 }
