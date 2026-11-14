@@ -677,6 +677,7 @@ app.get('/api/owner/medical-records', requireOwner, asyncRoute(async (req, res) 
     pool.query(
       `SELECT l.id, l.pet_id AS "petId", l.appointment_id AS "appointmentId",
               l.test_name AS "testName", l.status, l.result_text AS "resultText",
+              l.reason, l.expected_at AS "expectedAt",
               l.requested_at AS "requestedAt", l.reviewed_at AS "reviewedAt",
               p.name AS "petName", p.species, d.full_name AS "doctorName"
        FROM lab_results l
@@ -1216,7 +1217,7 @@ app.post('/api/owner/orders', requireSameOrigin, requireOwner, appointmentLimite
       `INSERT INTO orders (
          id, owner_id, status, payment_method, fulfillment_method,
          delivery_address, contact_phone, total_amount, stock_reserved, updated_by
-       ) VALUES ($1, $2, 'new', $3, $4, $5, $6, $7, true, $2)`,
+       ) VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, true, $2)`,
       [
         orderId, req.user.id, paymentMethod, fulfillmentMethod,
         fulfillmentMethod === 'delivery' ? deliveryAddress : '', contactPhone, total,
@@ -1241,7 +1242,7 @@ app.post('/api/owner/orders', requireSameOrigin, requireOwner, appointmentLimite
     }
     await client.query('COMMIT');
     transactionOpen = false;
-    return res.status(201).json({ order: { id: orderId, status: 'new', totalAmount: total } });
+    return res.status(201).json({ order: { id: orderId, status: 'pending', totalAmount: total } });
   } catch (error) {
     if (transactionOpen) await client.query('ROLLBACK');
     throw error;
@@ -1459,6 +1460,7 @@ app.get('/api/staff/lab-results', requireClinicalStaff, asyncRoute(async (req, r
   const result = await pool.query(
         `SELECT l.id, l.pet_id AS "petId", l.appointment_id AS "appointmentId",
           l.test_name AS "testName", l.status, l.result_text AS "resultText",
+          l.reason, l.expected_at AS "expectedAt",
           l.requested_at AS "requestedAt", l.reviewed_at AS "reviewedAt",
           p.name AS "petName", p.species, o.full_name AS "ownerName"
      FROM lab_results l
@@ -1474,9 +1476,17 @@ app.get('/api/staff/lab-results', requireClinicalStaff, asyncRoute(async (req, r
 
 app.post('/api/staff/lab-results', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
   const body = req.body ?? {};
-  const { petId, testName, appointmentId = null } = body;
-  if (typeof petId !== 'string' || !/^[0-9a-f-]{36}$/i.test(petId) || !validText(testName, 120)) {
-    return res.status(400).json({ error: 'Choose a patient and enter the requested test.' });
+  const { petId, testName, reason, expectedAt, appointmentId = null } = body;
+  const expectedDate = typeof expectedAt === 'string' ? Date.parse(expectedAt) : Number.NaN;
+  if (
+    typeof petId !== 'string'
+    || !/^[0-9a-f-]{36}$/i.test(petId)
+    || !validText(testName, 120)
+    || !validText(reason, 2000)
+    || !Number.isFinite(expectedDate)
+    || expectedDate <= Date.now()
+  ) {
+    return res.status(400).json({ error: 'Choose a patient, enter the test and reason, and select a future test date.' });
   }
   const pet = await staffPetAccess(req, petId);
   if (!pet) return res.status(404).json({ error: 'That patient is not linked to your clinic schedule.' });
@@ -1484,14 +1494,24 @@ app.post('/api/staff/lab-results', requireSameOrigin, requireClinicalStaff, asyn
     return res.status(400).json({ error: 'Choose a valid appointment.' });
   }
   const result = await pool.query(
-    `INSERT INTO lab_results (id, pet_id, doctor_id, appointment_id, test_name, updated_by)
-     VALUES ($1, $2, $3, $4, $5, $3)
-     RETURNING id, pet_id AS "petId", appointment_id AS "appointmentId",
-       test_name AS "testName", status, result_text AS "resultText",
-       requested_at AS "requestedAt", reviewed_at AS "reviewedAt"`,
-    [randomUUID(), petId, req.user.id, appointmentId, testName.trim()],
+    `INSERT INTO lab_results (id, pet_id, doctor_id, appointment_id, test_name, reason, expected_at, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $3)
+     RETURNING id`,
+    [randomUUID(), petId, req.user.id, appointmentId, testName.trim(), reason.trim(), new Date(expectedDate).toISOString()],
   );
-  return res.status(201).json({ labResult: result.rows[0] });
+  const labResult = await pool.query(
+    `SELECT l.id, l.pet_id AS "petId", l.appointment_id AS "appointmentId",
+            l.test_name AS "testName", l.status, l.result_text AS "resultText",
+            l.reason, l.expected_at AS "expectedAt",
+            l.requested_at AS "requestedAt", l.reviewed_at AS "reviewedAt",
+            p.name AS "petName", p.species, o.full_name AS "ownerName"
+     FROM lab_results l
+     JOIN pets p ON p.id = l.pet_id
+     JOIN users o ON o.id = p.owner_id
+     WHERE l.id = $1`,
+    [result.rows[0].id],
+  );
+  return res.status(201).json({ labResult: labResult.rows[0] });
 }));
 
 app.patch('/api/staff/lab-results/:id', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
@@ -1512,6 +1532,7 @@ app.patch('/api/staff/lab-results/:id', requireSameOrigin, requireClinicalStaff,
   const result = await pool.query(
     `SELECT l.id, l.pet_id AS "petId", l.appointment_id AS "appointmentId",
             l.test_name AS "testName", l.status, l.result_text AS "resultText",
+            l.reason, l.expected_at AS "expectedAt",
             l.requested_at AS "requestedAt", l.reviewed_at AS "reviewedAt",
             p.name AS "petName", p.species, o.full_name AS "ownerName"
      FROM lab_results l
@@ -2014,7 +2035,7 @@ app.get('/api/staff/orders', requireClinicalStaff, asyncRoute(async (_req, res) 
 
 app.patch('/api/staff/orders/:id/status', requireSameOrigin, requireClinicalStaff, asyncRoute(async (req, res) => {
   const nextStatus = req.body?.status;
-  const allowedStatuses = ['new', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'];
+  const allowedStatuses = ['pending', 'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'completed', 'cancelled'];
   if (!allowedStatuses.includes(nextStatus)) {
     return res.status(400).json({ error: 'Choose a valid order status.' });
   }

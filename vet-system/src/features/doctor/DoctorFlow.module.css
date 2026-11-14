@@ -82,7 +82,7 @@
 .requestList { display: grid; }
 .request { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #eff2ee; }
 .request:last-child { border-bottom: 0; }
-.petAvatar { display: grid; flex: 0 0 auto; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: #f3efe3; font-size: 20px; }
+.petAvatar { display: grid; flex: 0 0 48px; place-items: center; width: 48px; height: 48px; border-radius: 13px; background: #f3efe3; font-size: 26px; }
 .requestInfo { min-width: 0; flex: 1; }
 .requestInfo b, .requestInfo small { display: block; }
 .requestInfo b { overflow: hidden; color: #334138; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
@@ -111,6 +111,8 @@
 .event b { color: #52715a; font-size: 9px; }
 .event span { font-size: 10px; font-weight: 800; }
 .event small { color: #77877b; font-size: 8px; }
+.labEvent { border-left-color: #7d68ad; background: #f1eef8; }
+.labEvent b { color: #6a5793; }
 .noEvents { padding-top: 14px; color: #b1bab3; font-size: 9px; text-align: center; }
 .searchBox { display: flex; align-items: center; gap: 10px; width: min(390px, 100%); height: 40px; margin-bottom: 18px; padding: 0 12px; border: 1px solid #e2e8e1; border-radius: 8px; color: #76857a; background: white; }
 .searchBox:focus-within { border-color: #6b9777; box-shadow: 0 0 0 3px rgba(107,151,119,.11); }
@@ -120,7 +122,7 @@
 .patientCell > span:last-child { display: grid; gap: 3px; }
 .patientCell b { color: #344238; font-size: 11px; }
 .patientCell small { color: #87948b; font-size: 9px; }
-.largePet { width: 64px; height: 64px; border-radius: 16px; font-size: 31px; }
+.largePet { flex-basis: 76px; width: 76px; height: 76px; border-radius: 18px; font-size: 39px; }
 .backButton { margin-bottom: 20px; padding: 0; border: 0; color: #54745d; background: none; font-size: 11px; font-weight: 800; }
 .profileHeader { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; padding: 20px; border: 1px solid #e8ede7; border-radius: 12px; background: #fafcf9; }
 .profileHeader > div { flex: 1; }
@@ -259,7 +261,7 @@
   .recentHeader h2 { font-size: 18px; }
   .recentPatients { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .recentPatient { gap: 9px; padding: 10px; }
-  .recentAvatar { flex-basis: 40px; width: 40px; height: 40px; font-size: 21px; }
+  .recentAvatar { flex-basis: 48px; width: 48px; height: 48px; font-size: 25px; }
 }
 @media (max-width: 1120px) {
   .layout { grid-template-columns: 218px minmax(0, 1fr); }

@@ -24,22 +24,24 @@ test('treats products without an inventory row as unavailable', () => {
   ]);
 });
 
-test('allows an order to enter preparation or be cancelled when new', () => {
-  assert.equal(canTransitionOrderStatus('new', 'preparing', 'clinic_pickup'), true);
-  assert.equal(canTransitionOrderStatus('new', 'cancelled', 'delivery'), true);
-  assert.equal(canTransitionOrderStatus('new', 'delivered', 'clinic_pickup'), false);
+test('requires a pending order to be confirmed before preparation', () => {
+  assert.equal(canTransitionOrderStatus('pending', 'confirmed', 'clinic_pickup'), true);
+  assert.equal(canTransitionOrderStatus('pending', 'cancelled', 'delivery'), true);
+  assert.equal(canTransitionOrderStatus('pending', 'preparing', 'clinic_pickup'), false);
 });
 
-test('uses fulfillment method to choose the next preparing status', () => {
-  assert.equal(canTransitionOrderStatus('preparing', 'delivered', 'clinic_pickup'), true);
+test('uses fulfillment method to choose the correct ready status and completion', () => {
+  assert.equal(canTransitionOrderStatus('confirmed', 'preparing', 'clinic_pickup'), true);
+  assert.equal(canTransitionOrderStatus('preparing', 'ready_for_pickup', 'clinic_pickup'), true);
   assert.equal(canTransitionOrderStatus('preparing', 'out_for_delivery', 'delivery'), true);
   assert.equal(canTransitionOrderStatus('preparing', 'out_for_delivery', 'clinic_pickup'), false);
+  assert.equal(canTransitionOrderStatus('ready_for_pickup', 'completed', 'clinic_pickup'), true);
+  assert.equal(canTransitionOrderStatus('out_for_delivery', 'completed', 'delivery'), true);
 });
 
 test('prevents transitions from terminal statuses', () => {
-  assert.equal(canTransitionOrderStatus('out_for_delivery', 'delivered', 'delivery'), true);
-  assert.equal(canTransitionOrderStatus('delivered', 'cancelled', 'delivery'), false);
+  assert.equal(canTransitionOrderStatus('completed', 'cancelled', 'delivery'), false);
   assert.equal(canTransitionOrderStatus('cancelled', 'preparing', 'clinic_pickup'), false);
   assert.equal(canTransitionOrderStatus('unknown', 'preparing', 'delivery'), false);
-  assert.equal(canTransitionOrderStatus('preparing', 'delivered', 'unknown'), false);
+  assert.equal(canTransitionOrderStatus('preparing', 'completed', 'unknown'), false);
 });

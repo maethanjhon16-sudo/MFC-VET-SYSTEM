@@ -74,6 +74,17 @@ function dateLabel(date: string): string {
   });
 }
 
+function manilaDateKey(value: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(value));
+  const date = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
+  return `${date.year}-${date.month}-${date.day}`;
+}
+
 function weekdayLabel(date: string): string {
   return new Date(`${date}T12:00:00+08:00`).toLocaleDateString('en-PH', {
     timeZone: 'Asia/Manila',
@@ -604,11 +615,16 @@ export function DoctorFlow({ doctorName, onSignOut }: DoctorFlowProps) {
               <div className={styles.calendar}>
                 {weekDates.map((date) => {
                   const dayAppointments = state.appointments.filter((item) => item.date === date && item.status !== 'Declined');
+                  const dayLabTests = state.labResults.filter((item) => item.expectedAt && manilaDateKey(item.expectedAt) === date);
                   return <article className={`${styles.calendarDay} ${date === today && state.weekOffset === 0 ? styles.currentDay : ''}`} key={date}>
                     <div className={styles.dayHeading}><span>{weekdayLabel(date)}</span><b>{new Date(`${date}T12:00:00Z`).getUTCDate()}</b></div>
                     <div className={styles.dayEvents}>
                       {dayAppointments.map((item) => <button type="button" className={styles.event} key={item.id} onClick={() => openAppointment(item.id)}><b>{item.time}</b><span>{item.pet}</span><small>{item.service}</small></button>)}
-                      {dayAppointments.length === 0 && <span className={styles.noEvents}>No visits</span>}
+                      {dayLabTests.map((item) => <button type="button" className={`${styles.event} ${styles.labEvent}`} key={`lab-${item.id}`} onClick={() => navigate('labs')}>
+                        <b>{item.expectedAt ? new Date(item.expectedAt).toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }) : ''}</b>
+                        <span>{item.petName}</span><small>Lab test · {item.testName}</small>
+                      </button>)}
+                      {dayAppointments.length === 0 && dayLabTests.length === 0 && <span className={styles.noEvents}>No visits or tests</span>}
                     </div>
                   </article>;
                 })}

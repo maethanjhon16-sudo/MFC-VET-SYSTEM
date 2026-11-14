@@ -227,6 +227,8 @@ export interface OwnerLabResult {
   testName: string;
   status: 'pending' | 'in_lab' | 'ready' | 'reviewed';
   resultText: string;
+  reason: string;
+  expectedAt: string | null;
   requestedAt: string;
   reviewedAt: string | null;
   petName: string;
@@ -425,6 +427,8 @@ export interface LabResult {
   testName: string;
   status: 'pending' | 'in_lab' | 'ready' | 'reviewed';
   resultText: string;
+  reason: string;
+  expectedAt: string | null;
   requestedAt: string;
   reviewedAt: string | null;
   petName: string;
@@ -436,7 +440,13 @@ export function getStaffLabResults() {
   return request<{ labResults: LabResult[] }>('/api/staff/lab-results', undefined, 'GET');
 }
 
-export function createStaffLabResult(input: { petId: string; testName: string; appointmentId?: string | null }) {
+export function createStaffLabResult(input: {
+  petId: string;
+  testName: string;
+  reason: string;
+  expectedAt: string;
+  appointmentId?: string | null;
+}) {
   return request<{ labResult: LabResult }>('/api/staff/lab-results', input);
 }
 
@@ -605,9 +615,11 @@ export function saveStaffPreferences(notificationSettings: DoctorNotificationSet
   return request<{ preferences: { notificationSettings: DoctorNotificationSettings; updatedAt: string } }>('/api/staff/preferences', { notificationSettings }, 'PUT');
 }
 
+export type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'ready_for_pickup' | 'out_for_delivery' | 'completed' | 'cancelled';
+
 export interface StaffOrder {
   id: string;
-  status: 'new' | 'preparing' | 'out_for_delivery' | 'delivered' | 'cancelled';
+  status: OrderStatus;
   paymentMethod: string;
   fulfillmentMethod: 'clinic_pickup' | 'delivery';
   deliveryAddress: string;

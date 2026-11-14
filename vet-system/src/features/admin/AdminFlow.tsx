@@ -35,10 +35,11 @@ function formatWhen(value: string): string {
   });
 }
 
-function eventIcon(eventType: string): 'quick-calendar' | 'quick-chat' | 'quick-file' | 'btn-bag' {
+function eventIcon(eventType: string): 'quick-calendar' | 'quick-chat' | 'quick-file' | 'quick-bag' | 'flask' {
   if (eventType.includes('appointment') || eventType === 'revisit_suggested') return 'quick-calendar';
   if (eventType === 'care_team_message') return 'quick-chat';
-  if (eventType === 'order_placed' || eventType === 'order_updated') return 'btn-bag';
+  if (eventType.includes('lab')) return 'flask';
+  if (eventType.includes('order') || eventType === 'inventory_updated') return 'quick-bag';
   return 'quick-file';
 }
 
@@ -290,15 +291,23 @@ function ActivityList({
   return (
     <div className={styles.activityList}>
       {events.map((event) => (
-        <article className={`${styles.activityItem} ${event.readAt ? '' : styles.activityUnread}`} key={event.id}>
-          <span className={styles.activityIcon}><Icon name={eventIcon(event.eventType)} size={18} /></span>
-          <div className={styles.activityCopy}>
+        <button
+          type="button"
+          className={`${styles.activityItem} ${event.readAt ? '' : styles.activityUnread}`}
+          key={event.id}
+          aria-label={event.readAt ? `${event.title}, already read` : `Mark ${event.title} as read`}
+          disabled={Boolean(event.readAt) || saving}
+          onClick={() => onRead(event)}
+        >
+          <span className={styles.activityIcon}><Icon name={eventIcon(event.eventType)} size={22} /></span>
+          <span className={styles.activityCopy}>
             <b>{event.title}</b>
-            <p>{event.detail}</p>
-            <small>{event.actorName} · {event.actorRole} · {formatWhen(event.createdAt)}</small>
-          </div>
-          {!event.readAt && <button type="button" className={styles.markReadButton} disabled={saving} onClick={() => onRead(event)}>Mark read</button>}
-        </article>
+            <span>{event.detail}</span>
+            <small>{event.actorName} · {event.actorRole === 'doctor' ? 'Veterinarian' : event.actorRole === 'owner' ? 'Pet owner' : event.actorRole} · {formatWhen(event.createdAt)}</small>
+          </span>
+          {!event.readAt && <span className={styles.unreadDot} aria-label="Unread" />}
+          <Icon name="chev-row" size={18} />
+        </button>
       ))}
     </div>
   );
