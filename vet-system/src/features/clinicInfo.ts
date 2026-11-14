@@ -1,6 +1,6 @@
 export const CLINIC_ADDRESS = 'Datu Ingkal St, Poblacion, Kidapawan City, 9400 Cotabato';
 export const CLINIC_CITY = 'Kidapawan City';
-export const CLINIC_HOURS = 'Open Mon–Sat 8:00 AM – 6:00 PM';
+export const CLINIC_HOURS = 'Default: Open Mon–Sat 8:00 AM – 6:00 PM';
 
 export function getClinicGreeting(date = new Date()): string {
   const hour = Number(new Intl.DateTimeFormat('en-PH', {
