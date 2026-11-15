@@ -27,3 +27,17 @@ select {
 button {
   cursor: pointer;
 }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Long emails, tokens and URLs wrap instead of forcing sideways scrolling. */
+p,
+h1,
+h2,
+h3,
+small {
+  overflow-wrap: break-word;
+}

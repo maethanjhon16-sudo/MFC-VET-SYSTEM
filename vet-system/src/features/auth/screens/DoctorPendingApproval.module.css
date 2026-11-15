@@ -1,7 +1,7 @@
 .card {
   width: 100%;
   margin: 0;
-  padding: 22px;
+  padding: clamp(16px, 4vw, 22px);
   list-style: none;
   border: 1px solid var(--color-line);
   border-radius: 18px;
@@ -24,6 +24,6 @@
   font-weight: 800;
 }
 .done { background: var(--color-forest); }
-.text { display: flex; flex-direction: column; gap: 2px; line-height: normal; white-space: nowrap; }
+.text { display: flex; flex-direction: column; gap: 2px; min-width: 0; line-height: normal; }
 .stepTitle { color: var(--color-ink); font-size: 15px; font-weight: 800; }
 .stepNote { color: var(--color-mute); font-size: 13px; font-weight: 500; }

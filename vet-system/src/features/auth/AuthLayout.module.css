@@ -1,10 +1,22 @@
 .layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  min-width: 1200px;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--color-off);
 }
-.formPanel { display: flex; align-items: center; justify-content: center; padding: 32px; }
-.form { display: flex; flex-direction: column; align-items: flex-start; gap: 20px; width: 460px; }
+.formPanel { display: flex; align-items: center; justify-content: center; min-width: 0; padding: clamp(20px, 4vw, 32px); }
+.form { display: flex; flex-direction: column; align-items: flex-start; gap: 20px; width: min(460px, 100%); min-width: 0; }
 .notice { width: 100%; margin: 0; padding: 12px 14px; border: 1px solid #e8c9c4; border-radius: 12px; color: #8d4037; background: #fbefed; font-size: 13px; line-height: 1.5; }
+
+/* Narrow desktops / tablets landscape: give the form column a little more room. */
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: 5fr 6fr; }
+}
+
+/* Tablets portrait and phones: stack. The hero becomes a compact brand banner above the form. */
+@media (max-width: 860px) {
+  .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .formPanel { align-items: flex-start; padding-top: 28px; padding-bottom: 40px; }
+  .form { gap: 18px; }
+}

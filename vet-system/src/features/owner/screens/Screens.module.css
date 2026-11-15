@@ -174,7 +174,7 @@
 .sortOption:hover { background: var(--color-gray); }
 .sortOn { background: var(--color-sage); color: var(--color-forest); font-weight: 800; }
 .chevOpen { transform: rotate(90deg); }
-.productGrid { display: grid; grid-template-columns: repeat(5, 246px); gap: 20px; justify-content: space-between; width: 100%; }
+.productGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 246px)); gap: 20px; justify-content: space-between; width: 100%; }
 
 /* Product details */
 .productCols { display: flex; align-items: flex-start; gap: 48px; width: 100%; }

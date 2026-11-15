@@ -5,7 +5,7 @@
   align-items: center;
   justify-content: center;
   gap: 26px;
-  padding: 64px;
+  padding: clamp(28px, 5vw, 64px);
   overflow: hidden;
   background-image: linear-gradient(128.66deg, rgb(42, 102, 72) 14.644%, rgb(20, 54, 38) 85.356%);
 }
@@ -26,10 +26,10 @@
   position: relative;
   margin: 0;
   color: var(--color-white);
-  font-size: 54px;
+  font-size: clamp(30px, 4.4vw, 54px);
   font-weight: 800;
   letter-spacing: 1px;
-  white-space: nowrap;
+  text-align: center;
 }
 .quote {
   position: relative;
@@ -43,7 +43,7 @@
   text-align: center;
 }
 
-.photos { position: relative; display: flex; gap: 16px; }
+.photos { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; }
 .photo {
   display: flex;
   align-items: center;
@@ -58,7 +58,7 @@
 .tan { background-image: linear-gradient(to bottom, #efdfc7 18%, #c98c41); }
 .violet { background-image: linear-gradient(to bottom, #ddd4ee 18%, #a82ecc); }
 
-.highlights { position: relative; display: flex; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.highlights { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 0; padding: 0; list-style: none; }
 .pill {
   display: flex;
   align-items: center;
@@ -70,4 +70,19 @@
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+/* Compact banner when the layout stacks (see AuthLayout). */
+@media (max-width: 860px) {
+  .hero { flex-direction: row; flex-wrap: wrap; gap: 8px 16px; padding: 22px 20px; }
+  .logoMark { width: 64px; height: 64px; }
+  .logoMark img { width: 42px; height: auto; }
+  .brand { font-size: 26px; letter-spacing: .5px; }
+  .quote { flex-basis: 100%; width: auto; font-size: 14px; line-height: 21px; }
+  .photos, .highlights, .ellipseBottom { display: none; }
+  .ellipseTop { left: -120px; top: -160px; width: 360px; height: 360px; }
+}
+@media (max-width: 420px) {
+  .hero { padding: 18px 16px; }
+  .brand { font-size: 22px; }
 }
