@@ -105,7 +105,35 @@ export function logout() {
 }
 
 export function requestPasswordReset(email: string) {
-  return request<void>('/api/auth/password-reset', { email });
+  return request<{ requested: boolean }>('/api/auth/password-reset', { email });
+}
+
+export function confirmPasswordReset(input: { token: string; password: string }) {
+  return request<{ role: 'owner' | 'doctor' }>('/api/auth/password-reset/confirm', input);
+}
+
+export interface ManagedAccount {
+  id: string;
+  fullName: string;
+  email: string;
+  role: 'owner' | 'doctor';
+  /** Set when the person asked for a reset and no link has been issued since. */
+  resetRequestedAt: string | null;
+}
+
+export function getAdminUsers(search: string) {
+  return request<{ users: ManagedAccount[] }>(
+    `/api/admin/users?q=${encodeURIComponent(search)}`,
+    undefined,
+    'GET',
+  );
+}
+
+export function issuePasswordResetLink(userId: string) {
+  return request<{ token: string; expiresAt: string; user: { id: string; fullName: string; role: 'owner' | 'doctor' } }>(
+    `/api/admin/users/${encodeURIComponent(userId)}/password-reset`,
+    {},
+  );
 }
 
 export interface DoctorApplication {
