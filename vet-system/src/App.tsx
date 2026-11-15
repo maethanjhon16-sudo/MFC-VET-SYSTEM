@@ -12,6 +12,8 @@ type AppState = {
   user: AuthUser | null;
   checkingSession: boolean;
   notice: string | null;
+  /** One-time password reset token from the URL fragment; cleared once the person signs in. */
+  resetToken: string | null;
 };
 type AppAction =
   | { type: 'SESSION_READY'; destination: ExitDestination | null; user: AuthUser | null }
@@ -30,18 +32,24 @@ function destinationFor(user: AuthUser | null): ExitDestination | null {
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'SESSION_READY':
-      return { destination: action.destination, user: action.user, checkingSession: false, notice: null };
+      return { ...state, destination: action.destination, user: action.user, checkingSession: false, notice: null };
     case 'SESSION_FAILED':
-      return { destination: null, user: null, checkingSession: false, notice: action.message };
+      return { ...state, destination: null, user: null, checkingSession: false, notice: action.message };
     case 'ENTER':
-      return { destination: destinationFor(action.user), user: action.user, checkingSession: false, notice: null };
+      return { destination: destinationFor(action.user), user: action.user, checkingSession: false, notice: null, resetToken: null };
     case 'UPDATE_USER_NAME':
       return state.user ? { ...state, user: { ...state.user, fullName: action.fullName } } : state;
     case 'SIGN_OUT':
-      return { destination: null, user: null, checkingSession: false, notice: action.notice ?? null };
+      return { ...state, destination: null, user: null, checkingSession: false, notice: action.notice ?? null };
     default:
       return state;
   }
+}
+
+/** Reset links look like /#reset-password=<token>. A fragment is never sent to the server or in Referer. */
+function readResetToken(): string | null {
+  const match = /^#reset-password=([A-Za-z0-9_-]{43})$/.exec(window.location.hash);
+  return match?.[1] ?? null;
 }
 
 const DESTINATION_LABEL: Record<ExitDestination, string> = {
@@ -56,7 +64,15 @@ export function App() {
     user: null,
     checkingSession: true,
     notice: null,
+    resetToken: readResetToken(),
   });
+
+  // The token lives in memory only; remove it from the address bar and history.
+  useEffect(() => {
+    if (window.location.hash.startsWith('#reset-password=')) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -98,6 +114,11 @@ export function App() {
       });
     }
   }, []);
+
+  // A reset link takes priority over any existing session: the person is recovering an account.
+  if (state.resetToken) {
+    return <AuthFlow initialScreen="reset-password" resetToken={state.resetToken} onExit={enter} notice={state.notice} />;
+  }
 
   if (state.checkingSession) {
     return <main className={styles.placeholder} aria-live="polite"><p>Checking your session…</p></main>;

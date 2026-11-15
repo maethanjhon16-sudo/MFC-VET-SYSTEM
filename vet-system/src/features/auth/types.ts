@@ -11,6 +11,8 @@ export type AuthScreen =
   | 'forgot-password'
   | 'registration-confirmation'
   | 'reset-link-sent'
+  | 'reset-password'
+  | 'password-updated'
   | 'doctor-pending-approval';
 
 /** Screens that live outside the Authentication frame (built in later passes). */

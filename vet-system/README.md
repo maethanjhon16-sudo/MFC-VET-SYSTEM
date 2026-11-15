@@ -91,6 +91,7 @@ No `useState` anywhere — everything uses `useReducer`:
 | Owner Sign-up | `screens/OwnerSignUp.tsx` (includes Province / City / Barangay) |
 | Doctor Sign-up | `screens/DoctorSignUp.tsx` |
 | Forgot Password | `screens/ForgotPassword.tsx` |
+| Choose a new password / Password updated (opened from an admin-issued link) | `screens/ResetPassword.tsx`, `screens/PasswordUpdated.tsx` |
 | Registration Confirmation / Reset Link Sent / Doctor Pending Approval | `screens/*.tsx` on `StatusScreen` |
 
 The hero panel is identical on all 10 frames, so it is one component (`HeroPanel.tsx`).
@@ -100,10 +101,30 @@ The hero panel is identical on all 10 frames, so it is one component (`HeroPanel
 Email/password registration and login are handled by the Node API and Neon, with scrypt
 password hashes and server-side sessions in HttpOnly, SameSite cookies. Doctor sign-ups
 remain pending until an administrator approves them. Admin accounts cannot self-register.
-Password reset is intentionally unavailable until an email delivery provider is configured.
+
+### Password recovery
+
+There is no email provider yet, so recovery is administrator-assisted and uses expiring,
+single-use links:
+
+1. On **Forgot password**, the person enters their email. The API always replies "request
+   received" (so it can't be used to discover which emails have accounts) and, for an active
+   owner or doctor, adds a "Password reset requested" item to the administrators' activity feed.
+2. An administrator opens **Account recovery**, finds the person, confirms who they are
+   (phone, in person, etc.), and clicks **Create reset link**. The link is shown once, works
+   once, expires after 60 minutes, and replaces any earlier link for that account. Only
+   the SHA-256 hash of the token is stored.
+3. The person opens the link (`/#reset-password=<token>`; the token is in the URL fragment, so
+   it isn't sent to the server or in Referer headers, and the app removes it from the address
+   bar), picks a new password, and all of their other sessions are signed out.
+
+Administrator accounts can't be recovered this way; use `npm run db:reset-admin-password`.
+Endpoints: `POST /api/auth/password-reset`, `POST /api/auth/password-reset/confirm`,
+`GET /api/admin/users`, `POST /api/admin/users/:id/password-reset`. The `password_reset_tokens`
+table is created automatically on startup. When an email provider is added later, the same token
+flow can be reused: have `POST /api/auth/password-reset` email the link instead of notifying admins.
 Do not use the prototype to collect real clinical or personal data before adding email
-verification, password recovery, privacy/consent policies, backups, and operational
-monitoring.
+verification, privacy/consent policies, backups, and operational monitoring.
 
 ## Pet owner and doctor workspaces (desktop)
 

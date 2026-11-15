@@ -32,6 +32,18 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 CREATE INDEX IF NOT EXISTS auth_sessions_expires_at_idx
   ON auth_sessions (expires_at);
 
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  token_hash text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_by text REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  used_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx
+  ON password_reset_tokens (user_id);
+
 CREATE TABLE IF NOT EXISTS pets (
   id text PRIMARY KEY,
   owner_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,

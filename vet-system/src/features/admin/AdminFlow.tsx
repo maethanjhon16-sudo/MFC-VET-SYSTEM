@@ -12,14 +12,16 @@ import {
   type DoctorApplication,
 } from '../auth/api';
 import { StaffAppointmentQueue } from '../appointments/StaffAppointmentQueue';
+import { AccountRecovery } from './AccountRecovery';
 import styles from './AdminFlow.module.css';
 
-type AdminView = 'overview' | 'appointments' | 'doctors' | 'activity';
+type AdminView = 'overview' | 'appointments' | 'doctors' | 'accounts' | 'activity';
 
-const NAV_ITEMS: { id: AdminView; label: string; icon: 'nav-home' | 'nav-calendar' | 'quick-file' | 'bell' }[] = [
+const NAV_ITEMS: { id: AdminView; label: string; icon: 'nav-home' | 'nav-calendar' | 'quick-file' | 'bell' | 'lock' }[] = [
   { id: 'overview', label: 'Overview', icon: 'nav-home' },
   { id: 'appointments', label: 'Appointments', icon: 'nav-calendar' },
   { id: 'doctors', label: 'Doctor approvals', icon: 'quick-file' },
+  { id: 'accounts', label: 'Account recovery', icon: 'lock' },
   { id: 'activity', label: 'Activity & notifications', icon: 'bell' },
 ];
 
@@ -196,7 +198,9 @@ export function AdminFlow({ adminName, onSignOut }: { adminName: string; onSignO
                   ? 'Updates from pet owners and veterinarians across the clinic.'
                   : view === 'doctors'
                     ? 'Review and verify veterinarian account requests.'
-                    : 'Review pending appointment requests and clinic scheduling.'}</span>
+                    : view === 'accounts'
+                      ? 'Help pet owners and veterinarians who can’t sign in.'
+                      : 'Review pending appointment requests and clinic scheduling.'}</span>
             </div>
             <button type="button" className={styles.refreshButton} onClick={() => void refresh()}>↻ <span>Refresh</span></button>
           </div>
@@ -259,6 +263,8 @@ export function AdminFlow({ adminName, onSignOut }: { adminName: string; onSignO
                 </article>
               ))}</div>}
           </section>}
+
+          {view === 'accounts' && <AccountRecovery onIssued={() => void refresh()} />}
 
           {view === 'activity' && <section className={styles.panel}>
             <div className={styles.panelHeading}>

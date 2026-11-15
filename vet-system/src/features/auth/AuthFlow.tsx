@@ -6,8 +6,10 @@ import { DoctorSignUp } from './screens/DoctorSignUp';
 import { ForgotPassword } from './screens/ForgotPassword';
 import { LoginScreen } from './screens/LoginScreen';
 import { OwnerSignUp } from './screens/OwnerSignUp';
+import { PasswordUpdated } from './screens/PasswordUpdated';
 import { RegistrationConfirmation } from './screens/RegistrationConfirmation';
 import { ResetLinkSent } from './screens/ResetLinkSent';
+import { ResetPassword } from './screens/ResetPassword';
 import { RoleSelection } from './screens/RoleSelection';
 import type { AuthUser } from './api';
 import type { AuthScreen, ExitDestination } from './types';
@@ -17,9 +19,11 @@ interface AuthFlowProps {
   /** Called when the user leaves Authentication (e.g. after logging in). */
   onExit: (destination: ExitDestination, user?: AuthUser) => void;
   notice?: string | null;
+  /** One-time token from an administrator-issued reset link. */
+  resetToken?: string | null;
 }
 
-export function AuthFlow({ initialScreen = 'role-selection', onExit, notice }: AuthFlowProps) {
+export function AuthFlow({ initialScreen = 'role-selection', onExit, notice, resetToken = null }: AuthFlowProps) {
   const [state, dispatch] = useReducer(authReducer, initialScreen, createInitialState);
 
   const go = useCallback((to: AuthScreen) => dispatch({ type: 'NAVIGATE', to }), []);
@@ -47,11 +51,17 @@ export function AuthFlow({ initialScreen = 'role-selection', onExit, notice }: A
               />
             );
           case 'forgot-password':
-            return <ForgotPassword go={go} />;
+            return <ForgotPassword go={go} onRequested={(email) => dispatch({ type: 'RESET_LINK_REQUESTED', email })} />;
           case 'registration-confirmation':
             return <RegistrationConfirmation {...nav} />;
           case 'reset-link-sent':
             return <ResetLinkSent go={go} email={state.resetEmail} />;
+          case 'reset-password':
+            return resetToken
+              ? <ResetPassword go={go} token={resetToken} onUpdated={(role) => dispatch({ type: 'PASSWORD_UPDATED', role })} />
+              : <ForgotPassword go={go} onRequested={(email) => dispatch({ type: 'RESET_LINK_REQUESTED', email })} />;
+          case 'password-updated':
+            return <PasswordUpdated go={go} role={state.resetRole} />;
           case 'doctor-pending-approval':
             return <DoctorPendingApproval {...nav} submittedAt={state.doctorSubmittedAt} />;
         }

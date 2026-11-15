@@ -10,9 +10,11 @@ import { AuthSubtitle, AuthTitle } from '../AuthText';
 import type { ScreenProps } from '../types';
 import styles from './Form.module.css';
 
-type ForgotPasswordProps = Pick<ScreenProps, 'go'>;
+interface ForgotPasswordProps extends Pick<ScreenProps, 'go'> {
+  onRequested: (email: string) => void;
+}
 
-export function ForgotPassword({ go }: ForgotPasswordProps) {
+export function ForgotPassword({ go, onRequested }: ForgotPasswordProps) {
   const { values, setField } = useForm({ email: '' });
   const request = useRequestState();
 
@@ -20,7 +22,10 @@ export function ForgotPassword({ go }: ForgotPasswordProps) {
     event.preventDefault();
     request.start();
     try {
-      await requestPasswordReset(values.email.trim());
+      const email = values.email.trim();
+      await requestPasswordReset(email);
+      request.clear();
+      onRequested(email);
     } catch (error) {
       request.fail(error);
     }
@@ -30,7 +35,7 @@ export function ForgotPassword({ go }: ForgotPasswordProps) {
     <form className={styles.form} onSubmit={handleSubmit}>
       <Badge tone="sage">Account recovery</Badge>
       <AuthTitle>Reset your password</AuthTitle>
-      <AuthSubtitle>Password reset by email is not available yet. Please contact the clinic administrator.</AuthSubtitle>
+      <AuthSubtitle>Enter the email you registered with. The clinic administrator will confirm it’s you and give you a secure link to choose a new password.</AuthSubtitle>
 
       <TextField
         label="Email address"
@@ -45,7 +50,7 @@ export function ForgotPassword({ go }: ForgotPasswordProps) {
       />
 
       {request.error && <p className={styles.errorNotice} role="alert">{request.error}</p>}
-      <Button type="submit" disabled={request.pending}>{request.pending ? 'Sending…' : 'Send Reset Link'}</Button>
+      <Button type="submit" disabled={request.pending}>{request.pending ? 'Sending…' : 'Request Password Reset'}</Button>
       <FooterPrompt prompt="Remembered it?" actionLabel="Back to login" onAction={() => go('owner-login')} />
     </form>
   );

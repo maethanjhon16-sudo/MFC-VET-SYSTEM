@@ -15,6 +15,12 @@ import {
 } from './appointmentRules.js';
 import { canTransitionOrderStatus, getInventoryShortages } from './orderRules.js';
 import { productCatalog } from './productCatalog.js';
+import {
+  RESETTABLE_ROLES,
+  createResetToken,
+  isWellFormedResetToken,
+  passwordProblem,
+} from './passwordReset.js';
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -64,6 +70,20 @@ const appointmentLimiter = rateLimit({
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: { error: 'Too many appointment requests. Please try again later.' },
+});
+const passwordResetRequestLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many password reset requests. Please try again later.' },
+});
+const passwordResetConfirmLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait and try again.' },
 });
 function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
@@ -465,9 +485,83 @@ app.post('/api/auth/logout', requireSameOrigin, asyncRoute(async (req, res) => {
   res.status(204).end();
 }));
 
-app.post('/api/auth/password-reset', requireSameOrigin, asyncRoute(async (_req, res) => {
+// Password recovery without email delivery:
+//   1. The person asks for a reset here. We always answer the same way so the form cannot be
+//      used to discover which emails have accounts, and we quietly notify the administrators.
+//   2. An administrator verifies the person and issues a single-use, expiring link
+//      (POST /api/admin/users/:id/password-reset) and passes it on.
+//   3. The person opens the link and chooses a new password (POST .../confirm).
+app.post('/api/auth/password-reset', requireSameOrigin, passwordResetRequestLimiter, asyncRoute(async (req, res) => {
   await ensureSchema();
-  return res.status(501).json({ error: 'Password reset email is not configured yet. Contact the clinic administrator.' });
+  const email = normalizeEmail(req.body?.email);
+  if (!validEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
+
+  const result = await pool.query(
+    `SELECT id, full_name FROM users
+     WHERE email = $1 AND role = ANY($2) AND status = 'active'`,
+    [email, RESETTABLE_ROLES],
+  );
+  const user = result.rows[0];
+  if (user) {
+    await pool.query(
+      `INSERT INTO activity_events (
+         id, actor_id, actor_name, actor_role, event_type, title, detail, entity_type, entity_id
+       )
+       SELECT $1::text, NULL::text, 'Clinic system', 'system', 'password_reset_requested',
+              'Password reset requested', $2::text, 'account', $3::text
+       WHERE NOT EXISTS (
+         SELECT 1 FROM activity_events
+         WHERE event_type = 'password_reset_requested' AND entity_id = $3::text
+           AND created_at > now() - interval '15 minutes'
+       )`,
+      [randomUUID(), `${user.full_name} (${email}) asked for a password reset link.`, user.id],
+    );
+  }
+  return res.status(202).json({ requested: true });
+}));
+
+app.post('/api/auth/password-reset/confirm', requireSameOrigin, passwordResetConfirmLimiter, asyncRoute(async (req, res) => {
+  await ensureSchema();
+  const { token, password } = req.body ?? {};
+  const invalidLink = 'This reset link is invalid or has expired. Ask the clinic administrator for a new one.';
+  if (!isWellFormedResetToken(token)) return res.status(400).json({ error: invalidLink });
+  const problem = passwordProblem(password);
+  if (problem) return res.status(400).json({ error: problem });
+
+  const passwordHash = await hashPassword(password);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Consuming the token is the atomic step: only one request can win, and it must still be
+    // unused, unexpired, and belong to an active owner or doctor.
+    const consumed = await client.query(
+      `UPDATE password_reset_tokens t
+       SET used_at = now()
+       FROM users u
+       WHERE t.token_hash = $1 AND t.used_at IS NULL AND t.expires_at > now()
+         AND u.id = t.user_id AND u.status = 'active' AND u.role = ANY($2)
+       RETURNING t.user_id, u.role`,
+      [hashToken(token), RESETTABLE_ROLES],
+    );
+    if (!consumed.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: invalidLink });
+    }
+    const { user_id: userId, role } = consumed.rows[0];
+    await client.query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, userId]);
+    await client.query('DELETE FROM auth_sessions WHERE user_id = $1', [userId]);
+    await client.query(
+      'UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL',
+      [userId],
+    );
+    await client.query('COMMIT');
+    return res.json({ role });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }));
 
 app.get('/api/owner/doctors', requireOwner, asyncRoute(async (_req, res) => {
@@ -2286,6 +2380,85 @@ app.post('/api/admin/doctor-applications/:id/approve', requireSameOrigin, requir
   );
   if (!result.rowCount) return res.status(404).json({ error: 'That pending doctor application was not found.' });
   return res.json({ approved: true });
+}));
+
+app.get('/api/admin/users', requireAdministrator, asyncRoute(async (req, res) => {
+  const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+  const pattern = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
+  const result = await pool.query(
+    `SELECT u.id, u.full_name, u.email, u.role,
+            (SELECT max(e.created_at) FROM activity_events e
+             WHERE e.event_type = 'password_reset_requested' AND e.entity_id = u.id
+               AND e.created_at > now() - interval '30 days'
+               AND e.created_at > COALESCE(
+                 (SELECT max(i.created_at) FROM activity_events i
+                  WHERE i.event_type = 'password_reset_issued' AND i.entity_id = u.id),
+                 '-infinity'::timestamptz
+               )) AS reset_requested_at
+     FROM users u
+     WHERE u.role = ANY($1) AND u.status = 'active'
+       AND ($2::text = '' OR u.full_name ILIKE $3 ESCAPE '\\' OR u.email ILIKE $3 ESCAPE '\\')
+     ORDER BY reset_requested_at DESC NULLS LAST, u.full_name, u.id
+     LIMIT 50`,
+    [RESETTABLE_ROLES, query, pattern],
+  );
+  res.json({
+    users: result.rows.map((row) => ({
+      id: row.id,
+      fullName: row.full_name,
+      email: row.email,
+      role: row.role,
+      resetRequestedAt: row.reset_requested_at,
+    })),
+  });
+}));
+
+app.post('/api/admin/users/:id/password-reset', requireSameOrigin, requireAdministrator, asyncRoute(async (req, res) => {
+  const { token, expiresAt } = createResetToken();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const target = await client.query(
+      `SELECT id, full_name, role FROM users
+       WHERE id = $1 AND role = ANY($2) AND status = 'active'
+       FOR UPDATE`,
+      [req.params.id, RESETTABLE_ROLES],
+    );
+    if (!target.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'That active pet owner or doctor account was not found.' });
+    }
+    const user = target.rows[0];
+    // Only the newest link works; issuing a new one retires any earlier unused link.
+    await client.query(
+      'UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL',
+      [user.id],
+    );
+    await client.query(
+      'INSERT INTO password_reset_tokens (token_hash, user_id, created_by, expires_at) VALUES ($1, $2, $3, $4)',
+      [hashToken(token), user.id, req.user.id, expiresAt],
+    );
+    await client.query(
+      `INSERT INTO activity_events (
+         id, actor_id, actor_name, actor_role, event_type, title, detail,
+         entity_type, entity_id, admin_read_at
+       ) VALUES ($1, $2, $3, 'admin', 'password_reset_issued', 'Password reset link issued', $4,
+                 'account', $5, now())`,
+      [randomUUID(), req.user.id, req.user.full_name, `Reset link issued for ${user.full_name}.`, user.id],
+    );
+    await client.query('COMMIT');
+    res.set('Cache-Control', 'no-store');
+    return res.status(201).json({
+      token,
+      expiresAt,
+      user: { id: user.id, fullName: user.full_name, role: user.role },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }));
 
 const builtFrontend = path.join(frontendDirectory, 'index.html');
